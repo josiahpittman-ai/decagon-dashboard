@@ -1,0 +1,20 @@
+# render.yaml — Render Blueprint (Infrastructure as Code)
+# Docs: https://docs.render.com/blueprint-spec
+#
+# To deploy:
+#   1. Push this repo to GitHub
+#   2. In Render dashboard → New → Blueprint → select the repo
+#   3. Render reads this file and creates the service automatically
+
+services:
+  - type: web
+    name: decagon-dashboard
+    runtime: python
+    plan: free            # Change to "starter" for always-on
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2
+    envVars:
+      - key: DECAGON_API_KEY
+        sync: false       # You'll enter this manually in the Render dashboard
+      - key: DECAGON_API_BASE
+        value: https://api.decagon.ai
