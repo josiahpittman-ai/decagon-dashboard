@@ -15,6 +15,7 @@ API Reference:
 import os
 import json
 import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytz
@@ -31,6 +32,26 @@ PORT = int(os.environ.get("PORT", 5000))
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+DB_PATH = os.environ.get("DB_PATH", "data/stats.db")
+
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS daily_stats (
+                date TEXT PRIMARY KEY,
+                total_conversations INTEGER,
+                deflected INTEGER,
+                escalated INTEGER,
+                deflection_rate REAL,
+                csat_average REAL,
+                updated_at TIMESTAMP
+            )
+        ''')
+        conn.commit()
+
+init_db()
 
 # ---------------------------------------------------------------------------
 # In-memory cache for the latest stats (refreshed daily)
@@ -170,6 +191,9 @@ def compute_stats(start_date: str = None, end_date: str = None):
     hourly_volume = {}
     # Per-day hourly: {"YYYY-MM-DD": {"HH:00": {"total": int, "deflected": int}}}
     hourly_by_day = {}
+    
+    # Per-day CSAT tracking: {"YYYY-MM-DD": [csat1, csat2, ...]}
+    csat_by_day = {}
 
     # Daily per-category: daily_cat_map[day_str][(parent, sub)] = {total, deflected}
     daily_cat_map = {}
@@ -295,7 +319,12 @@ def compute_stats(start_date: str = None, end_date: str = None):
                 csat_values.append(csat_score)
                 key = str(csat_score)
                 csat_distribution[key] = csat_distribution.get(key, 0) + 1
-            except (ValueError, TypeError):
+                
+                # Global day tracking for CSAT
+                created_dt_utc = datetime.fromisoformat(convo.get("created_at", "").replace("Z", "+00:00"))
+                day_key_csat = created_dt_utc.astimezone(eastern).strftime("%Y-%m-%d")
+                csat_by_day.setdefault(day_key_csat, []).append(csat_score)
+            except (ValueError, TypeError, AttributeError):
                 pass
 
         # ---- Watchtower / Auto QA Reviews ----
@@ -383,6 +412,33 @@ def compute_stats(start_date: str = None, end_date: str = None):
     # CSAT average
     csat_avg = round(sum(csat_values) / len(csat_values), 2) if csat_values else None
 
+    # -- Upsert daily_stats to SQLite --
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            for day, h_vols in hourly_by_day.items():
+                day_tot = sum(h["total"] for h in h_vols.values())
+                day_defl = sum(h["deflected"] for h in h_vols.values())
+                day_esc = day_tot - day_defl
+                day_rate = round((day_defl / day_tot) * 100, 1) if day_tot > 0 else 0.0
+                
+                day_csats = csat_by_day.get(day, [])
+                day_csat_avg = round(sum(day_csats) / len(day_csats), 2) if day_csats else None
+                
+                conn.execute('''
+                    INSERT INTO daily_stats (date, total_conversations, deflected, escalated, deflection_rate, csat_average, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(date) DO UPDATE SET
+                        total_conversations=excluded.total_conversations,
+                        deflected=excluded.deflected,
+                        escalated=excluded.escalated,
+                        deflection_rate=excluded.deflection_rate,
+                        csat_average=excluded.csat_average,
+                        updated_at=excluded.updated_at
+                ''', (day, day_tot, day_defl, day_esc, day_rate, day_csat_avg, now_utc.isoformat()))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to upsert daily stats to SQLite: {e}")
+
     # Build daily_category_stats: sorted day labels + per-category daily rates
     day_labels = sorted(daily_cat_map.keys())
     # Attach daily deflection rates to each category_detail row
@@ -439,6 +495,19 @@ def dashboard():
 @app.route("/categories")
 def categories_page():
     return render_template("categories.html", stats=stats_cache)
+
+
+@app.route("/history")
+def history_page():
+    history_data = []
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("SELECT * FROM daily_stats ORDER BY date DESC").fetchall()
+            history_data = [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Failed to fetch history: {e}")
+    return render_template("history.html", stats=stats_cache, history=history_data)
 
 
 @app.route("/api/stats")

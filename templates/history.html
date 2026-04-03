@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Daily History · Decagon Stats</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e4e4e7;
+      --muted: #8b8d97;
+      --accent: #6366f1;
+      --green: #22c55e;
+      --red: #ef4444;
+      --row-hover: rgba(255,255,255,0.03);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 13px;
+    }
+
+    /* NAV */
+    .topnav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 1.5rem; height: 52px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+    .topnav .brand { font-weight: 700; font-size: 1rem; color: var(--accent); }
+    .topnav .nav-links { display: flex; gap: 1.5rem; }
+    .topnav .nav-links a {
+      text-decoration: none; color: var(--muted); font-size: 0.85rem; padding-bottom: 2px;
+    }
+    .topnav .nav-links a:hover, .topnav .nav-links a.active {
+      color: var(--text); border-bottom: 2px solid var(--accent);
+    }
+
+    /* CONTAINER */
+    .container { padding: 1.2rem 1.5rem 3rem; max-width: 1600px; margin: 0 auto; }
+    
+    .header-info { margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--muted); }
+
+    /* CHARTS */
+    .chart-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;
+    }
+    .chart-card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
+    .chart-wrap { position: relative; width: 100%; height: 220px; }
+
+    /* HEATMAP TABLE */
+    .table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 8px;}
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      white-space: nowrap;
+    }
+    .history-table th {
+      text-align: left;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: var(--card); z-index: 2;
+    }
+    .history-table th.num-col { text-align: right; }
+    .history-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .history-table tr:last-child td { border-bottom: none; }
+    .history-table tr:hover td { background: var(--row-hover); }
+
+    .bold-cell { font-weight: 600; color: var(--text); }
+    .num-cell { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    
+    .heat-badge {
+      display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.75rem; min-width: 48px; text-align: center;
+    }
+    
+    .footer {
+      text-align: center; color: var(--muted); font-size: 0.75rem;
+      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">Decagon Stats</span>
+  <div class="nav-links">
+    <a href="/">Overview</a>
+    <a href="/categories">Categories</a>
+    <a href="/history" class="active">Daily History</a>
+  </div>
+  <span style="font-size:.78rem;color:var(--muted);">
+    Local SQLite DB
+  </span>
+</nav>
+
+<div class="container">
+  
+  <div class="header-info">
+    Metrics are aggregated and permanently stored day by day (EST).
+  </div>
+
+  <div class="chart-card">
+    <h2>Historical Deflection Rate Trend</h2>
+    <div class="chart-wrap">
+      <canvas id="trendLine"></canvas>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Date (EST)</th>
+          <th class="num-col">Total Conversations</th>
+          <th class="num-col">Deflected</th>
+          <th class="num-col">Escalated</th>
+          <th class="num-col">Deflection Rate</th>
+          <th class="num-col">Avg CSAT</th>
+          <th class="num-col">Last Updated (UTC)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in history %}
+        <tr>
+          <td class="bold-cell">{{ row.date }}</td>
+          <td class="num-cell">{{ row.total_conversations }}</td>
+          <td class="num-cell">{{ row.deflected }}</td>
+          <td class="num-cell">{{ row.escalated }}</td>
+          <td class="num-cell">
+            <span class="heat-badge" style="{{ 'background:rgba(34,197,94,0.25);color:#bbf7d0' if row.deflection_rate >= 60 else ('background:rgba(245,158,11,0.25);color:#fde68a' if row.deflection_rate >= 40 else 'background:rgba(239,68,68,0.30);color:#fecaca') }}">
+              {{ row.deflection_rate }}%
+            </span>
+          </td>
+          <td class="num-cell">
+            {% if row.csat_average %}
+              {{ row.csat_average }}
+            {% else %}
+              <span style="opacity:0.5">—</span>
+            {% endif %}
+          </td>
+          <td class="num-cell" style="font-size:0.7rem; opacity:0.7;">
+            {{ row.updated_at[:19].replace('T', ' ') if row.updated_at else '—' }}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" style="text-align:center; padding: 2rem; color: var(--muted);">No historical data stored yet. It will populate as daily loads occur.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">
+    Stored in persistent local storage. &middot;
+    <a href="/api/stats" style="color:var(--accent);">JSON API</a>
+  </div>
+</div>
+
+<script>
+  // Setup Chart
+  const historyData = {{ history | tojson }};
+  
+  // Sort ascending for chart (chronological left-to-right)
+  const chartData = [...historyData].sort((a,b) => a.date.localeCompare(b.date));
+  
+  if (chartData.length > 0) {
+    const dates = chartData.map(d => d.date);
+    const rates = chartData.map(d => d.deflection_rate);
+    const totals = chartData.map(d => d.total_conversations);
+
+    new Chart(document.getElementById('trendLine'), {
+      type: 'line',
+      data: {
+        labels: dates,
+        datasets: [{
+          label: 'Deflection Rate',
+          data: rates,
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.15)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#6366f1',
+          yAxisID: 'y'
+        },
+        {
+          label: 'Total Volume',
+          data: totals,
+          type: 'bar',
+          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+          yAxisID: 'y1'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { 
+          legend: { labels: { color: '#8b8d97' } }
+        },
+        scales: {
+          x: { ticks: { color: '#8b8d97' }, grid: { display: false } },
+          y: { 
+            type: 'linear', display: true, position: 'left', min: 0, max: 100, 
+            ticks: { color: '#8b8d97', callback: v => v + '%' }, 
+            grid: { color: '#2a2d3a' } 
+          },
+          y1: { 
+            type: 'linear', display: true, position: 'right', min: 0,
+            ticks: { color: 'rgba(255,255,255,0.3)' },
+            grid: { drawOnChartArea: false }
+          }
+        }
+      }
+    });
+  }
+</script>
+</body>
+</html>
