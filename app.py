@@ -49,12 +49,21 @@ def init_db():
                 updated_at TIMESTAMP
             )
         ''')
+        # Persistent task store to fix multi-worker/process "not found" issues
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                status TEXT,
+                result TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         conn.commit()
 
 init_db()
 
 # ---------------------------------------------------------------------------
-# Task Store & Cache
+# Cache
 # ---------------------------------------------------------------------------
 stats_cache = {
     "last_updated": None, "start_date": None, "end_date": None,
@@ -64,9 +73,6 @@ stats_cache = {
     "conversation_totals": {"total": 0, "deflected": 0, "escalated": 0},
     "hourly_volume": {}, "hourly_by_day": {}, "error": None,
 }
-
-# In-memory store for custom date computations (prevents 30s timeouts)
-task_results = {}
 
 # ---------------------------------------------------------------------------
 # Decagon API helpers
@@ -106,7 +112,7 @@ def stream_conversations(min_ts: float, max_ts: float):
 def compute_stats(start_date: str = None, end_date: str = None, task_id: str = None):
     """
     Fetch data from Decagon and recompute all dashboard metrics.
-    If task_id is provide, store result in global task_results.
+    Syncs with DB tasks so multiple workers can see the progress.
     """
     global stats_cache
 
@@ -121,12 +127,14 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
         "hourly_volume": {}, "hourly_by_day": {}, "error": None,
     }
 
-    if not DECAGON_API_KEY:
-        local_stats["error"] = "API Key not set."
-        if task_id: task_results[task_id] = local_stats
-        return local_stats
-
     try:
+        if not DECAGON_API_KEY:
+            local_stats["error"] = "API Key not set."
+            if task_id:
+                with sqlite3.connect(DB_PATH) as conn:
+                    conn.execute("UPDATE tasks SET status='complete', result=? WHERE id=?", (json.dumps(local_stats), task_id))
+            return local_stats
+
         now_utc = datetime.now(timezone.utc)
         now_est = now_utc.astimezone(eastern)
 
@@ -234,13 +242,17 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
                     conn.execute("INSERT OR REPLACE INTO daily_stats (date, total_conversations, deflection_rate, updated_at) VALUES (?,?,?,?)", (d, d_tot, local_results["deflection_rate"], now_est.isoformat()))
                 conn.commit()
 
-        if task_id: task_results[task_id] = local_results
+        if task_id:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("UPDATE tasks SET status='complete', result=? WHERE id=?", (json.dumps(local_results), task_id))
         return local_results
 
     except Exception as e:
         logger.error(f"Compute error: {e}", exc_info=True)
         local_stats["error"] = str(e)
-        if task_id: task_results[task_id] = local_stats
+        if task_id:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("UPDATE tasks SET status='error', result=? WHERE id=?", (json.dumps(local_stats), task_id))
         return local_stats
 
 # ---------------------------------------------------------------------------
@@ -250,7 +262,11 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
 def dashboard():
     try:
         tid = request.args.get('task_id')
-        stats = task_results.get(tid, stats_cache) if tid else stats_cache
+        stats = stats_cache
+        if tid:
+            with sqlite3.connect(DB_PATH) as conn:
+                r = conn.execute("SELECT result FROM tasks WHERE id=?", (tid,)).fetchone()
+                if r and r[0]: stats = json.loads(r[0])
         return render_template("dashboard.html", stats=stats)
     except Exception:
         logger.error(f"Dashboard render error: {traceback.format_exc()}")
@@ -260,7 +276,11 @@ def dashboard():
 def categories_page():
     try:
         tid = request.args.get('task_id')
-        stats = task_results.get(tid, stats_cache) if tid else stats_cache
+        stats = stats_cache
+        if tid:
+            with sqlite3.connect(DB_PATH) as conn:
+                r = conn.execute("SELECT result FROM tasks WHERE id=?", (tid,)).fetchone()
+                if r and r[0]: stats = json.loads(r[0])
         return render_template("categories.html", stats=stats)
     except Exception:
         logger.error(f"Categories render error: {traceback.format_exc()}")
@@ -284,22 +304,22 @@ def history_page():
         logger.error(f"History render error: {traceback.format_exc()}")
         return f"<h1>Internal Server Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
-# API FOR ASYNC COMPUTE
 @app.route("/api/compute_async", methods=["POST"])
 def compute_async():
-    start = request.args.get('start_date')
-    end = request.args.get('end_date')
+    start, end = request.args.get('start_date'), request.args.get('end_date')
     task_id = str(uuid.uuid4())
-    task_results[task_id] = {"status": "pending"}
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT INTO tasks (id, status) VALUES (?, 'pending')", (task_id,))
+        conn.commit()
     threading.Thread(target=compute_stats, args=(start, end, task_id)).start()
     return jsonify({"task_id": task_id})
 
 @app.route("/api/task_status/<task_id>")
 def task_status(task_id):
-    res = task_results.get(task_id)
-    if not res: return jsonify({"status": "not_found"}), 404
-    if "status" in res: return jsonify({"status": "pending"})
-    return jsonify({"status": "complete"})
+    with sqlite3.connect(DB_PATH) as conn:
+        r = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+        if not r: return jsonify({"status": "not_found"}), 404
+        return jsonify({"status": r[0]})
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
