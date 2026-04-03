@@ -433,6 +433,9 @@
     const start = document.getElementById('startDate').value;
     const end   = document.getElementById('endDate').value;
     if (!start || !end) { alert('Please select both dates.'); return; }
+
+    btn.innerText = "Applying...";
+    btn.disabled = true;
     
     const params = new URLSearchParams(window.location.search);
     params.set('start_date', start);

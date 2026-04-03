@@ -170,6 +170,11 @@
 </nav>
 
 <div class="container">
+
+  {% if stats.error %}
+  <div class="error-banner">{{ stats.error }}</div>
+  {% endif %}
+
   <div class="date-bar">
     <label>From</label>
     <input type="date" id="startDate" value="{{ stats.start_date or '' }}">
@@ -303,6 +308,9 @@ function applyDateRange(btn) {
   const start = document.getElementById('startDate').value;
   const end   = document.getElementById('endDate').value;
   if (!start || !end) { alert('Please select both dates.'); return; }
+
+  btn.innerText = "Applying...";
+  btn.disabled = true;
   
   const params = new URLSearchParams(window.location.search);
   params.set('start_date', start);
