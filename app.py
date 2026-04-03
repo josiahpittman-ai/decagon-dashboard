@@ -18,7 +18,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import requests
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # ---------------------------------------------------------------------------
@@ -27,7 +27,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 DECAGON_API_KEY = os.environ.get("DECAGON_API_KEY", "")
 DECAGON_API_BASE = os.environ.get("DECAGON_API_BASE", "https://api.decagon.ai")
 PORT = int(os.environ.get("PORT", 5000))
-
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,8 +36,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 stats_cache = {
     "last_updated": None,
+    "start_date": None,
+    "end_date": None,
+    "date_range": None,
     "deflection_rate": None,
     "categories": {},
+    "category_detail": [],       # Per-category/subcategory breakdown
+    "error_analysis": [],        # Watchtower / Auto QA issues
     "csat": {
         "average": None,
         "total_ratings": 0,
@@ -51,7 +55,6 @@ stats_cache = {
     },
     "error": None,
 }
-
 
 # ---------------------------------------------------------------------------
 # Decagon API helpers
@@ -106,8 +109,13 @@ def export_all_conversations(min_ts: float, max_ts: float) -> list:
 # ---------------------------------------------------------------------------
 # Stats computation
 # ---------------------------------------------------------------------------
-def compute_stats():
-    """Fetch data from Decagon and recompute all dashboard metrics."""
+def compute_stats(start_date: str = None, end_date: str = None):
+    """
+    Fetch data from Decagon and recompute all dashboard metrics.
+
+    Args:        start_date: ISO date string (YYYY-MM-DD). Defaults to yesterday.
+        end_date:   ISO date string (YYYY-MM-DD). Defaults to today.
+    """
     global stats_cache
 
     if not DECAGON_API_KEY:
@@ -116,13 +124,25 @@ def compute_stats():
         return
 
     now = datetime.now(timezone.utc)
-    yesterday = now - timedelta(days=1)
-    min_ts = yesterday.timestamp()
-    max_ts = now.timestamp()
+
+    if start_date:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    else:
+        start_dt = now - timedelta(days=1)
+
+    if end_date:
+        # End of the selected day (23:59:59)
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+            hour=23, minute=59, second=59, tzinfo=timezone.utc
+        )
+    else:
+        end_dt = now
+
+    min_ts = start_dt.timestamp()
+    max_ts = end_dt.timestamp()
 
     logger.info(
-        f"Refreshing stats for {yesterday.strftime('%Y-%m-%d %H:%M')} "
-        f"→ {now.strftime('%Y-%m-%d %H:%M')} UTC"
+        f"Refreshing stats for {start_dt.strftime('%Y-%m-%d')} "        f"→ {end_dt.strftime('%Y-%m-%d')} UTC"
     )
 
     # -- 1. Pull conversations -------------------------------------------------
@@ -137,35 +157,74 @@ def compute_stats():
     csat_values = []
     csat_distribution = {}
 
+    # Per-category/subcategory tracking:
+    # key = (parent_category, subcategory_or_None)
+    # value = {"total": int, "deflected": int, "escalated": int}
+    cat_detail_map = {}
+
+    # Watchtower / Auto QA error tracking
+    error_items = []
+
     for convo in conversations:
         # ---- Deflection / Escalation ----
-        # "undeflected" = true means escalated to a human agent
-        # "undeflected" = false (or absent) means AI deflected it
-        # "destination" is "AI" or "AGENT"
         is_undeflected = convo.get("undeflected", False)
         destination = convo.get("destination", "")
+        is_escalated = is_undeflected or destination == "AGENT"
 
-        if is_undeflected or destination == "AGENT":
-            escalated += 1
+        if is_escalated:            escalated += 1
         else:
             deflected += 1
 
-        # ---- Categories (from Insights tags) ----
+        # ---- Categories with subcategories (from tags array) ----
         tags = convo.get("tags", [])
+        parent_cat = None
+        subcategories = []
+
         if tags:
-            # Use the first (top-level) tag as the category
-            cat_name = tags[0].get("name", "Uncategorized") if tags else "Uncategorized"
+            for tag in tags:
+                level = tag.get("level", 0)
+                name = tag.get("name", "Uncategorized")
+                if level == 0:
+                    parent_cat = name
+                else:
+                    subcategories.append(name)
         else:
             # Fallback: check all_tags for any hierarchy
             all_tags = convo.get("all_tags", {})
-            cat_name = "Uncategorized"
             for hierarchy_id, hierarchy in all_tags.items():
                 hierarchy_tags = hierarchy.get("tags", [])
-                if hierarchy_tags:
-                    cat_name = hierarchy_tags[0].get("name", "Uncategorized")
+                for tag in hierarchy_tags:
+                    level = tag.get("level", 0)
+                    name = tag.get("name", "Uncategorized")
+                    if level == 0:
+                        parent_cat = name
+                    else:
+                        subcategories.append(name)
+                if parent_cat:
                     break
 
-        category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
+        if not parent_cat:
+            parent_cat = "Uncategorized"
+
+        # Track top-level category count (for the main dashboard donut)
+        category_counts[parent_cat] = category_counts.get(parent_cat, 0) + 1
+
+        # Track parent-level detail
+        key_parent = (parent_cat, None)
+        if key_parent not in cat_detail_map:
+            cat_detail_map[key_parent] = {"total": 0, "deflected": 0, "escalated": 0}
+        cat_detail_map[key_parent]["total"] += 1
+        cat_detail_map[key_parent]["deflected"] += 0 if is_escalated else 1
+        cat_detail_map[key_parent]["escalated"] += 1 if is_escalated else 0
+
+        # Track each subcategory under this parent
+        for sub in subcategories:
+            key_sub = (parent_cat, sub)
+            if key_sub not in cat_detail_map:
+                cat_detail_map[key_sub] = {"total": 0, "deflected": 0, "escalated": 0}
+            cat_detail_map[key_sub]["total"] += 1
+            cat_detail_map[key_sub]["deflected"] += 0 if is_escalated else 1
+            cat_detail_map[key_sub]["escalated"] += 1 if is_escalated else 0
 
         # ---- CSAT (embedded in conversation object) ----
         csat_score = convo.get("csat")
@@ -178,6 +237,33 @@ def compute_stats():
             except (ValueError, TypeError):
                 pass
 
+        # ---- Watchtower / Auto QA Reviews ----
+        watchtower = convo.get("watchtower_reviews", [])
+        for review in watchtower:
+            result = review.get("result", "")
+            # Track all reviews, but flag failures/issues prominently
+            rubric_score = review.get("rubric_score")
+            rubric_review = review.get("rubric_review", {})
+
+            # Collect failed rubric fields
+            failed_fields = []
+            for field_name, field_data in rubric_review.items():
+                if isinstance(field_data, dict):
+                    field_result = field_data.get("result", "")
+                    if field_result.lower() in ("fail", "failed", "no", "false"):
+                        failed_fields.append(field_name)
+
+            error_items.append({
+                "conversation_id": convo.get("id", ""),
+                "job_name": review.get("job_name", "Unknown"),
+                "result": result,
+                "rationale": review.get("rationale", ""),
+                "rubric_score": rubric_score,
+                "failed_fields": failed_fields,
+                "category": parent_cat,
+                "created_at": convo.get("created_at", ""),
+            })
+
     # Deflection rate = deflected / total conversations
     deflection_rate = (
         round((deflected / total) * 100, 1) if total > 0 else 0.0
@@ -189,15 +275,63 @@ def compute_stats():
         for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
             category_pcts[cat] = round((count / total) * 100, 1)
 
+    # Build category_detail list (sorted by parent, subcategories nested under)
+    category_detail = []
+    # Get unique parent categories sorted by total descending
+    parents = sorted(
+        {k[0] for k in cat_detail_map},
+        key=lambda p: cat_detail_map.get((p, None), {}).get("total", 0),
+        reverse=True,
+    )
+    for parent in parents:
+        p_data = cat_detail_map.get((parent, None), {"total": 0, "deflected": 0, "escalated": 0})
+        p_total = p_data["total"]
+        category_detail.append({
+            "category": parent,
+            "subcategory": None,            "total": p_total,
+            "deflected": p_data["deflected"],
+            "escalated": p_data["escalated"],
+            "deflection_rate": round((p_data["deflected"] / p_total) * 100, 1) if p_total > 0 else 0.0,
+            "percentage": round((p_total / total) * 100, 1) if total > 0 else 0.0,
+        })
+        # Add subcategories for this parent
+        sub_keys = sorted(
+            [k for k in cat_detail_map if k[0] == parent and k[1] is not None],
+            key=lambda k: cat_detail_map[k]["total"],
+            reverse=True,
+        )
+        for sk in sub_keys:
+            s_data = cat_detail_map[sk]
+            s_total = s_data["total"]
+            category_detail.append({
+                "category": parent,
+                "subcategory": sk[1],
+                "total": s_total,
+                "deflected": s_data["deflected"],
+                "escalated": s_data["escalated"],
+                "deflection_rate": round((s_data["deflected"] / s_total) * 100, 1) if s_total > 0 else 0.0,
+                "percentage": round((s_total / total) * 100, 1) if total > 0 else 0.0,
+            })
+
+    # Sort error_items: failures first, then by rubric_score ascending
+    error_items.sort(key=lambda x: (
+        0 if x["result"].lower() in ("fail", "failed") else 1,
+        x["rubric_score"] if x["rubric_score"] is not None else 999,
+    ))
+
     # CSAT average
     csat_avg = round(sum(csat_values) / len(csat_values), 2) if csat_values else None
 
     # -- 2. Update cache -------------------------------------------------------
     stats_cache = {
         "last_updated": now.isoformat(),
-        "date_range": f"{yesterday.strftime('%Y-%m-%d')} to {now.strftime('%Y-%m-%d')}",
+        "date_range": f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}",
+        "start_date": start_dt.strftime("%Y-%m-%d"),
+        "end_date": end_dt.strftime("%Y-%m-%d"),
         "deflection_rate": deflection_rate,
         "categories": category_pcts,
+        "category_detail": category_detail,
+        "error_analysis": error_items,
         "csat": {
             "average": csat_avg,
             "total_ratings": len(csat_values),
@@ -212,13 +346,17 @@ def compute_stats():
     }
     logger.info(f"Stats refreshed: {json.dumps(stats_cache, indent=2)}")
 
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html", stats=stats_cache)
+
+
+@app.route("/categories")
+def categories_page():
+    return render_template("categories.html", stats=stats_cache)
 
 
 @app.route("/api/stats")
@@ -229,10 +367,12 @@ def api_stats():
 
 @app.route("/api/refresh", methods=["POST"])
 def api_refresh():
-    """Manual refresh trigger."""
-    compute_stats()
+    """Manual refresh trigger. Accepts optional start_date / end_date in body or query."""
+    data = request.get_json(silent=True) or {}
+    start_date = data.get("start_date") or request.args.get("start_date")
+    end_date = data.get("end_date") or request.args.get("end_date")
+    compute_stats(start_date=start_date, end_date=end_date)
     return jsonify({"status": "ok", "stats": stats_cache})
-
 
 # ---------------------------------------------------------------------------
 # Scheduler: refresh daily at 6 AM UTC

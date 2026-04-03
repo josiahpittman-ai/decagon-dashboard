@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Decagon Stats Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+      --text: #e4e4e7; --muted: #8b8d97; --accent: #6366f1;
+      --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem;
+    }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
+    .header h1 { font-size: 1.75rem; font-weight: 700; }
+    .header .controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+
+    /* Date picker */
+    .date-picker { display: flex; align-items: center; gap: 0.5rem; }
+    .date-picker label { color: var(--muted); font-size: 0.8rem; }
+    .date-picker input[type="date"] {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.85rem;
+      cursor: pointer;
+    }    .date-picker input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+    .btn {
+      border: none; color: white; padding: 0.5rem 1rem; border-radius: 6px;
+      cursor: pointer; font-size: 0.85rem; font-weight: 500;
+    }
+    .btn-primary { background: var(--accent); }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.5; cursor: wait; }
+    .preset-btns { display: flex; gap: 0.35rem; }
+    .preset-btn {
+      background: var(--card); border: 1px solid var(--border); color: var(--muted);
+      padding: 0.35rem 0.6rem; border-radius: 5px; cursor: pointer; font-size: 0.75rem;
+    }
+    .preset-btn:hover, .preset-btn.active { border-color: var(--accent); color: var(--accent); }
+
+    .meta-line { color: var(--muted); font-size: 0.8rem; margin-bottom: 1.5rem; }
+
+    .error-banner {
+      background: #2d1618; border: 1px solid var(--red); color: #fca5a5;
+      padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem;
+    }
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem; margin-bottom: 2rem;
+    }
+    .kpi-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem;
+    }
+    .kpi-card .label {      color: var(--muted); font-size: 0.8rem; text-transform: uppercase;
+      letter-spacing: 0.05em; margin-bottom: 0.5rem;
+    }
+    .kpi-card .value { font-size: 2.25rem; font-weight: 700; line-height: 1.1; }
+    .kpi-card .sub { color: var(--muted); font-size: 0.8rem; margin-top: 0.35rem; }
+    .value.green { color: var(--green); }
+    .value.amber { color: var(--amber); }
+    .value.accent { color: var(--accent); }
+    .chart-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem;
+    }
+    @media (max-width: 768px) { .chart-row { grid-template-columns: 1fr; } }
+    .chart-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem;
+    }
+    .chart-card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+    .chart-wrap { position: relative; height: 300px; }
+    .cat-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .cat-table th {
+      text-align: left; color: var(--muted); font-weight: 500;
+      padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+    }
+    .cat-table td { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+    .cat-table .bar-cell { width: 50%; }
+    .bar-bg { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
+    .bar-fill { background: var(--accent); height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+    .footer {
+      text-align: center; color: var(--muted); font-size: 0.75rem;
+      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Decagon Stats</h1>
+  <div class="controls">
+    <div class="date-picker">
+      <label>From</label>
+      <input type="date" id="startDate" value="{{ stats.start_date or '' }}" />
+      <label>To</label>
+      <input type="date" id="endDate" value="{{ stats.end_date or '' }}" />
+    </div>
+    <button class="btn btn-primary" id="applyBtn" onclick="applyDateRange()">Apply</button>
+    <div class="preset-btns">
+      <button class="preset-btn" onclick="setPreset(1)">Today</button>
+      <button class="preset-btn" onclick="setPreset(7)">7d</button>
+      <button class="preset-btn" onclick="setPreset(30)">30d</button>
+      <button class="preset-btn" onclick="setPreset(90)">90d</button>
+    </div>
+  </div>
+</div>
+
+<div class="meta-line" id="metaLine">
+  {% if stats.last_updated %}
+    {{ stats.date_range }} &middot; Last updated: {{ stats.last_updated[:19] }} UTC
+  {% else %}
+    Not yet refreshed
+  {% endif %}
+</div>
+{% if stats.error %}
+<div class="error-banner">{{ stats.error }}</div>
+{% endif %}
+
+<!-- KPI Cards -->
+<div class="kpi-row">
+  <div class="kpi-card">
+    <div class="label">Deflection Rate</div>
+    <div class="value green" id="deflectionRate">
+      {{ stats.deflection_rate if stats.deflection_rate is not none else '—' }}%
+    </div>
+    <div class="sub">{{ stats.conversation_totals.deflected }} deflected &middot; {{ stats.conversation_totals.escalated }} escalated</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">CSAT Average</div>
+    <div class="value amber" id="csatAvg">
+      {{ stats.csat.average if stats.csat.average is not none else '—' }}
+    </div>
+    <div class="sub">{{ stats.csat.total_ratings }} ratings</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Total Conversations</div>
+    <div class="value accent" id="totalConvos">
+      {{ stats.conversation_totals.total }}
+    </div>
+    <div class="sub">For selected date range</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Escalation Rate</div>
+    <div class="value" style="color: var(--red);">      {% if stats.conversation_totals.total > 0 %}
+        {{ ((stats.conversation_totals.escalated / stats.conversation_totals.total) * 100) | round(1) }}%
+      {% else %}—{% endif %}
+    </div>
+    <div class="sub">Conversations needing a human</div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="chart-row">
+  <div class="chart-card">
+    <h2>Category Breakdown</h2>
+    <div class="chart-wrap">
+      <canvas id="categoryChart"></canvas>
+    </div>
+  </div>
+  <div class="chart-card">
+    <h2>CSAT Distribution</h2>
+    <div class="chart-wrap">
+      <canvas id="csatChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Category Table -->
+<div class="chart-card">
+  <h2>Category Detail</h2>
+  <table class="cat-table">
+    <thead>
+      <tr><th>Category</th><th>%</th><th class="bar-cell"></th></tr>    </thead>
+    <tbody>
+      {% for cat, pct in stats.categories.items() %}
+      <tr>
+        <td>{{ cat }}</td>
+        <td>{{ pct }}%</td>
+        <td class="bar-cell">
+          <div class="bar-bg"><div class="bar-fill" style="width: {{ pct }}%"></div></div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not stats.categories %}
+      <tr><td colspan="3" style="color: var(--muted); padding: 1rem 0;">No category data available</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">
+  Decagon Stats Dashboard &middot; Auto-refreshes daily at 06:00 UTC &middot;
+  <a href="/categories" style="color: var(--accent);">Category Breakdown</a> &middot;
+  <a href="/api/stats" style="color: var(--accent);">JSON API</a>
+</div>
+
+<script>
+  // --- Data from Flask ---
+  const categories = {{ stats.categories | tojson }};
+  const csatDist   = {{ stats.csat.distribution | tojson }};
+
+  // --- Category Donut Chart ---  const catNames  = Object.keys(categories);
+  const catValues = Object.values(categories);
+  const palette = [
+    '#6366f1', '#8b5cf6', '#a78bfa', '#c084fc', '#e879f9',
+    '#f472b6', '#fb7185', '#f97316', '#facc15', '#4ade80',
+    '#22d3ee', '#38bdf8', '#818cf8', '#a3e635', '#fbbf24',
+  ];
+
+  new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: {
+      labels: catNames,
+      datasets: [{
+        data: catValues,
+        backgroundColor: catNames.map((_, i) => palette[i % palette.length]),
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#8b8d97', padding: 10, font: { size: 11 }, boxWidth: 12 }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${ctx.label}: ${ctx.parsed}%`          }
+        }
+      }
+    }
+  });
+
+  // --- CSAT Bar Chart ---
+  const csatLabels = ['1', '2', '3', '4', '5'];
+  const csatValues = csatLabels.map(k => csatDist[k] || 0);
+  new Chart(document.getElementById('csatChart'), {
+    type: 'bar',
+    data: {
+      labels: csatLabels.map(l => l + ' star' + (l === '1' ? '' : 's')),
+      datasets: [{
+        data: csatValues,
+        backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e'],
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8b8d97' }, grid: { display: false } },
+        y: { ticks: { color: '#8b8d97', stepSize: 1 }, grid: { color: '#2a2d3a' } }
+      }
+    }
+  });
+
+  // --- Date Range Controls ---  function pad(d) { return d.toISOString().split('T')[0]; }
+
+  function setPreset(days) {
+    const end = new Date();
+    const start = new Date();
+    if (days === 1) {
+      // "Today" — start and end are both today
+      document.getElementById('startDate').value = pad(end);
+      document.getElementById('endDate').value = pad(end);
+    } else {
+      start.setDate(end.getDate() - days);
+      document.getElementById('startDate').value = pad(start);
+      document.getElementById('endDate').value = pad(end);
+    }
+    applyDateRange();
+  }
+
+  async function applyDateRange() {
+    const btn = document.getElementById('applyBtn');
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
+    if (!startDate || !endDate) {
+      alert('Please select both a start and end date.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Loading...';    try {
+      const resp = await fetch('/api/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: startDate, end_date: endDate })
+      });
+      if (resp.ok) { location.reload(); }
+      else { alert('Refresh failed — check server logs.'); }
+    } catch (e) {
+      alert('Network error: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Apply';
+  }
+</script>
+
+</body>
+</html>

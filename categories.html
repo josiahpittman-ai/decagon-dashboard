@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Category Breakdown — Decagon Stats</title>
+  <style>
+    :root {
+      --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+      --text: #e4e4e7; --muted: #8b8d97; --accent: #6366f1;
+      --green: #22c55e; --amber: #f59e0b; --red: #ef4444;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh; padding: 2rem;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
+    .header h1 { font-size: 1.75rem; font-weight: 700; }
+    .nav-link { color: var(--accent); font-size: 0.9rem; }
+
+    .controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .date-picker { display: flex; align-items: center; gap: 0.5rem; }
+    .date-picker label { color: var(--muted); font-size: 0.8rem; }
+    .date-picker input[type="date"] {
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      padding: 0.4rem 0.6rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer;    }
+    .date-picker input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+    .btn {
+      border: none; color: white; padding: 0.5rem 1rem; border-radius: 6px;
+      cursor: pointer; font-size: 0.85rem; font-weight: 500;
+    }
+    .btn-primary { background: var(--accent); }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn:disabled { opacity: 0.5; cursor: wait; }
+    .preset-btns { display: flex; gap: 0.35rem; }
+    .preset-btn {
+      background: var(--card); border: 1px solid var(--border); color: var(--muted);
+      padding: 0.35rem 0.6rem; border-radius: 5px; cursor: pointer; font-size: 0.75rem;
+    }
+    .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .meta-line { color: var(--muted); font-size: 0.8rem; margin-bottom: 1.5rem; }
+
+    .error-banner {
+      background: #2d1618; border: 1px solid var(--red); color: #fca5a5;
+      padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem;
+    }
+
+    /* Summary KPI row */
+    .kpi-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem; margin-bottom: 2rem;
+    }
+    .kpi-card {
+      background: var(--card); border: 1px solid var(--border);      border-radius: 12px; padding: 1.25rem;
+    }
+    .kpi-card .label {
+      color: var(--muted); font-size: 0.75rem; text-transform: uppercase;
+      letter-spacing: 0.05em; margin-bottom: 0.4rem;
+    }
+    .kpi-card .value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; }
+    .kpi-card .sub { color: var(--muted); font-size: 0.75rem; margin-top: 0.25rem; }
+
+    /* Category detail table */
+    .section-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;
+    }
+    .section-card h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; }
+
+    .detail-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .detail-table th {
+      text-align: left; color: var(--muted); font-weight: 500;
+      padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border);
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .detail-table td {
+      padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--border);
+    }
+    .detail-table tr:hover { background: rgba(99, 102, 241, 0.04); }
+
+    /* Parent row styling */
+    .row-parent td { font-weight: 600; }
+    .row-sub td:first-child { padding-left: 2rem; color: var(--muted); font-weight: 400; }    .row-sub td:first-child::before { content: '└ '; color: var(--border); }
+
+    /* Bar */
+    .bar-cell { width: 120px; }
+    .bar-bg { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+    .bar-fill.green { background: var(--green); }
+    .bar-fill.amber { background: var(--amber); }
+    .bar-fill.red { background: var(--red); }
+
+    /* Deflection rate color thresholds */
+    .rate-good { color: var(--green); }
+    .rate-mid { color: var(--amber); }
+    .rate-low { color: var(--red); }
+
+    /* Error analysis table */
+    .error-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .error-table th {
+      text-align: left; color: var(--muted); font-weight: 500;
+      padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border);
+      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .error-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .error-table tr:hover { background: rgba(239, 68, 68, 0.04); }
+
+    .badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 10px;
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    }
+    .badge-fail { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }    .badge-pass { background: rgba(34, 197, 94, 0.15); color: #86efac; }
+    .badge-warn { background: rgba(245, 158, 11, 0.15); color: #fcd34d; }
+
+    .rationale-text {
+      color: var(--muted); font-size: 0.78rem; max-width: 400px;
+      line-height: 1.4; word-break: break-word;
+    }
+    .failed-fields { color: var(--red); font-size: 0.75rem; margin-top: 0.2rem; }
+
+    .empty-state { color: var(--muted); padding: 2rem; text-align: center; font-size: 0.9rem; }
+
+    /* Search / filter */
+    .filter-bar { display: flex; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .filter-input {
+      background: var(--bg); border: 1px solid var(--border); color: var(--text);
+      padding: 0.45rem 0.75rem; border-radius: 6px; font-size: 0.85rem; width: 260px;
+    }
+    .filter-input::placeholder { color: var(--muted); }
+
+    .footer {
+      text-align: center; color: var(--muted); font-size: 0.75rem;
+      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Category Breakdown</h1>    <a href="/" class="nav-link">← Back to Dashboard</a>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="date-picker">
+    <label>From</label>
+    <input type="date" id="startDate" value="{{ stats.start_date or '' }}" />
+    <label>To</label>
+    <input type="date" id="endDate" value="{{ stats.end_date or '' }}" />
+  </div>
+  <button class="btn btn-primary" id="applyBtn" onclick="applyDateRange()">Apply</button>
+  <div class="preset-btns">
+    <button class="preset-btn" onclick="setPreset(1)">Today</button>
+    <button class="preset-btn" onclick="setPreset(7)">7d</button>
+    <button class="preset-btn" onclick="setPreset(30)">30d</button>
+    <button class="preset-btn" onclick="setPreset(90)">90d</button>
+  </div>
+</div>
+
+<div class="meta-line" id="metaLine">
+  {% if stats.last_updated %}
+    {{ stats.date_range }} &middot; Last updated: {{ stats.last_updated[:19] }} UTC
+  {% else %}
+    Not yet refreshed
+  {% endif %}
+</div>
+
+{% if stats.error %}
+<div class="error-banner">{{ stats.error }}</div>{% endif %}
+
+<!-- Summary KPIs -->
+<div class="kpi-row">
+  <div class="kpi-card">
+    <div class="label">Total Conversations</div>
+    <div class="value" style="color: var(--accent);">{{ stats.conversation_totals.total }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Categories Found</div>
+    <div class="value" style="color: var(--accent);">
+      {{ stats.category_detail | selectattr('subcategory', 'none') | list | length }}
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Overall Deflection</div>
+    <div class="value" style="color: var(--green);">{{ stats.deflection_rate }}%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">QA Reviews</div>
+    <div class="value" style="color: var(--amber);">{{ stats.error_analysis | length }}</div>
+    <div class="sub">Watchtower entries</div>
+  </div>
+</div>
+
+<!-- Category Detail Table -->
+<div class="section-card">
+  <h2>Categories &amp; Subcategories</h2>
+  <div class="filter-bar">
+    <input type="text" class="filter-input" id="catSearch" placeholder="Search categories…" oninput="filterCatTable()" />  </div>
+  <table class="detail-table" id="catTable">
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Total</th>
+        <th>Deflected</th>
+        <th>Escalated</th>
+        <th>Deflection Rate</th>
+        <th>% of Total</th>
+        <th class="bar-cell"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in stats.category_detail %}
+      <tr class="{{ 'row-parent' if item.subcategory is none else 'row-sub' }}"
+          data-category="{{ item.category | lower }}{{ (' ' + item.subcategory | lower) if item.subcategory else '' }}">
+        <td>
+          {% if item.subcategory %}
+            {{ item.subcategory }}
+          {% else %}
+            {{ item.category }}
+          {% endif %}
+        </td>
+        <td>{{ item.total }}</td>
+        <td>{{ item.deflected }}</td>
+        <td>{{ item.escalated }}</td>
+        <td>
+          <span class="{{ 'rate-good' if item.deflection_rate >= 70 else ('rate-mid' if item.deflection_rate >= 40 else 'rate-low') }}">
+            {{ item.deflection_rate }}%          </span>
+        </td>
+        <td>{{ item.percentage }}%</td>
+        <td class="bar-cell">
+          <div class="bar-bg">
+            <div class="bar-fill {{ 'green' if item.deflection_rate >= 70 else ('amber' if item.deflection_rate >= 40 else 'red') }}"
+                 style="width: {{ item.deflection_rate }}%"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not stats.category_detail %}
+      <tr><td colspan="7" class="empty-state">No category data available</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Error Analysis / Watchtower -->
+<div class="section-card">
+  <h2>Error Analysis (Auto QA / Watchtower)</h2>
+  <div class="filter-bar">
+    <input type="text" class="filter-input" id="errorSearch" placeholder="Search errors…" oninput="filterErrorTable()" />
+  </div>
+  {% if stats.error_analysis %}
+  <table class="error-table" id="errorTable">
+    <thead>
+      <tr>
+        <th>Result</th>
+        <th>Job</th>        <th>Category</th>
+        <th>Score</th>
+        <th>Rationale / Failed Fields</th>
+        <th>Conversation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for err in stats.error_analysis %}
+      <tr data-search="{{ err.job_name | lower }} {{ err.category | lower }} {{ err.result | lower }} {{ err.rationale | lower }}">
+        <td>
+          {% if err.result | lower in ['fail', 'failed'] %}
+            <span class="badge badge-fail">{{ err.result }}</span>
+          {% elif err.result | lower in ['pass', 'passed'] %}
+            <span class="badge badge-pass">{{ err.result }}</span>
+          {% else %}
+            <span class="badge badge-warn">{{ err.result }}</span>
+          {% endif %}
+        </td>
+        <td>{{ err.job_name }}</td>
+        <td>{{ err.category }}</td>
+        <td>
+          {% if err.rubric_score is not none %}
+            <span class="{{ 'rate-low' if err.rubric_score < 0.5 else ('rate-mid' if err.rubric_score < 0.8 else 'rate-good') }}">
+              {{ (err.rubric_score * 100) | round(0) | int }}%
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          <div class="rationale-text">{{ err.rationale[:200] }}{{ '…' if err.rationale | length > 200 else '' }}</div>
+          {% if err.failed_fields %}          <div class="failed-fields">Failed: {{ err.failed_fields | join(', ') }}</div>
+          {% endif %}
+        </td>
+        <td style="font-size: 0.75rem; font-family: monospace; color: var(--muted);">
+          {{ err.conversation_id[:12] }}…
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No Watchtower / Auto QA data found for this date range.</div>
+  {% endif %}
+</div>
+
+<div class="footer">
+  Decagon Stats Dashboard &middot; <a href="/">Main Dashboard</a> &middot;
+  <a href="/api/stats">JSON API</a>
+</div>
+
+<script>
+  // --- Date Range Controls (same as main dashboard) ---
+  function pad(d) { return d.toISOString().split('T')[0]; }
+
+  function setPreset(days) {
+    const end = new Date();
+    const start = new Date();
+    if (days === 1) {
+      document.getElementById('startDate').value = pad(end);
+      document.getElementById('endDate').value = pad(end);    } else {
+      start.setDate(end.getDate() - days);
+      document.getElementById('startDate').value = pad(start);
+      document.getElementById('endDate').value = pad(end);
+    }
+    applyDateRange();
+  }
+
+  async function applyDateRange() {
+    const btn = document.getElementById('applyBtn');
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
+    if (!startDate || !endDate) {
+      alert('Please select both a start and end date.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    try {
+      const resp = await fetch('/api/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: startDate, end_date: endDate })
+      });
+      if (resp.ok) { location.reload(); }
+      else { alert('Refresh failed — check server logs.'); }
+    } catch (e) {      alert('Network error: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Apply';
+  }
+
+  // --- Table Filters ---
+  function filterCatTable() {
+    const query = document.getElementById('catSearch').value.toLowerCase();
+    const rows = document.querySelectorAll('#catTable tbody tr');
+    rows.forEach(row => {
+      const text = row.getAttribute('data-category') || row.textContent.toLowerCase();
+      row.style.display = text.includes(query) ? '' : 'none';
+    });
+  }
+
+  function filterErrorTable() {
+    const query = document.getElementById('errorSearch').value.toLowerCase();
+    const rows = document.querySelectorAll('#errorTable tbody tr');
+    rows.forEach(row => {
+      const text = row.getAttribute('data-search') || row.textContent.toLowerCase();
+      row.style.display = text.includes(query) ? '' : 'none';
+    });
+  }
+</script>
+
+</body>
+</html>
