@@ -482,7 +482,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
         "hourly_by_day": {d: dict(sorted(v.items())) for d, v in sorted(hourly_by_day.items())},
         "error": None,
     }
-    logger.info(f"Stats refreshed: {json.dumps(stats_cache, indent=2)}")
+    logger.info("Stats refreshed successfully")
 
 # ---------------------------------------------------------------------------
 # Routes
