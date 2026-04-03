@@ -210,9 +210,9 @@ def compute_stats(start_date: str = None, end_date: str = None):
         # only keep what's strictly used for calculations
         # (reduces RAM footprint of each object stored in history_data or error_analysis)
         keys_to_keep = {
-            "undeflected", "destination", "created_at", "conversation_tags", 
-            "categories_tags", "csat", "rubric_score", "result", 
-            "job_name", "rationale", "conversation_id"
+            "undeflected", "destination", "created_at", "all_tags", 
+            "conversation_tags", "categories_tags", "csat", "rubric_score", 
+            "result", "job_name", "rationale", "conversation_id"
         }
         for k in list(convo.keys()):
             if k not in keys_to_keep:
