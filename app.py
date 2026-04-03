@@ -13,6 +13,7 @@ import logging
 import sqlite3
 import threading
 import traceback
+import uuid
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -48,40 +49,24 @@ def init_db():
                 updated_at TIMESTAMP
             )
         ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS daily_category_stats (
-                date TEXT,
-                category TEXT,
-                subcategory TEXT,
-                total_conversations INTEGER,
-                deflected INTEGER,
-                escalated INTEGER,
-                PRIMARY KEY (date, category, subcategory)
-            )
-        ''')
         conn.commit()
 
 init_db()
 
 # ---------------------------------------------------------------------------
-# In-memory cache for the latest stats (refreshed daily)
+# Task Store & Cache
 # ---------------------------------------------------------------------------
 stats_cache = {
-    "last_updated": None,
-    "start_date": None,
-    "end_date": None,
-    "date_range": "Initializing data...",
-    "deflection_rate": 0,
-    "categories": {},
-    "day_labels": [],
-    "category_detail": [],
-    "error_analysis": [],
-    "csat": {"average": 0, "total_ratings": 0, "distribution": {}},
+    "last_updated": None, "start_date": None, "end_date": None,
+    "date_range": "Initializing data...", "deflection_rate": 0,
+    "categories": {}, "day_labels": [], "category_detail": [],
+    "error_analysis": [], "csat": {"average": 0, "total_ratings": 0, "distribution": {}},
     "conversation_totals": {"total": 0, "deflected": 0, "escalated": 0},
-    "hourly_volume": {},
-    "hourly_by_day": {},
-    "error": None,
+    "hourly_volume": {}, "hourly_by_day": {}, "error": None,
 }
+
+# In-memory store for custom date computations (prevents 30s timeouts)
+task_results = {}
 
 # ---------------------------------------------------------------------------
 # Decagon API helpers
@@ -98,9 +83,7 @@ def stream_conversations(min_ts: float, max_ts: float):
     while True:
         params = {
             "timestamp_filter": "created_at",
-            "min_timestamp": min_ts,
-            "max_timestamp": max_ts,
-            "page_size": 1000,
+            "min_timestamp": min_ts, "max_timestamp": max_ts, "page_size": 1000,
         }
         if cursor: params["cursor"] = cursor
         try:
@@ -120,101 +103,80 @@ def stream_conversations(min_ts: float, max_ts: float):
 # ---------------------------------------------------------------------------
 # Stats computation
 # ---------------------------------------------------------------------------
-def compute_stats(start_date: str = None, end_date: str = None):
+def compute_stats(start_date: str = None, end_date: str = None, task_id: str = None):
     """
     Fetch data from Decagon and recompute all dashboard metrics.
-    Returns a fresh stats dictionary.
+    If task_id is provide, store result in global task_results.
     """
     global stats_cache
-    
+
     local_stats = {
         "last_updated": None,
         "start_date": start_date or (datetime.now(eastern) - timedelta(days=7)).strftime("%Y-%m-%d"),
         "end_date": end_date or datetime.now(eastern).strftime("%Y-%m-%d"),
         "date_range": "Refreshing...",
-        "deflection_rate": 0,
-        "categories": {},
-        "day_labels": [],
-        "category_detail": [],
-        "error_analysis": [],
-        "csat": {"average": 0, "total_ratings": 0, "distribution": {}},
+        "deflection_rate": 0, "categories": {}, "day_labels": [], "category_detail": [],
+        "error_analysis": [], "csat": {"average": 0, "total_ratings": 0, "distribution": {}},
         "conversation_totals": {"total": 0, "deflected": 0, "escalated": 0},
-        "hourly_volume": {},
-        "hourly_by_day": {},
-        "error": None,
+        "hourly_volume": {}, "hourly_by_day": {}, "error": None,
     }
 
     if not DECAGON_API_KEY:
         local_stats["error"] = "API Key not set."
+        if task_id: task_results[task_id] = local_stats
         return local_stats
 
     try:
         now_utc = datetime.now(timezone.utc)
         now_est = now_utc.astimezone(eastern)
 
-        if start_date:
-            start_dt = eastern.localize(datetime.strptime(start_date, "%Y-%m-%d"))
-        else:
-            start_dt = (now_est - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+        if start_date: start_dt = eastern.localize(datetime.strptime(start_date, "%Y-%m-%d"))
+        else: start_dt = (now_est - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-        if end_date:
-            end_dt = eastern.localize(datetime.strptime(end_date, "%Y-%m-%d")).replace(hour=23, minute=59, second=59)
-        else:
-            end_dt = now_est
+        if end_date: end_dt = eastern.localize(datetime.strptime(end_date, "%Y-%m-%d")).replace(hour=23, minute=59, second=59)
+        else: end_dt = now_est
 
         min_ts, max_ts = start_dt.timestamp(), end_dt.timestamp()
-        logger.info(f"Computing stats for {start_dt.date()} to {end_dt.date()}")
+        logger.info(f"Computing stats for {start_dt.date()} to {end_dt.date()} (task_id: {task_id})")
 
-        # Aggregation buckets
         total, deflected, escalated = 0, 0, 0
         hourly_volume = defaultdict(int)
         hourly_by_day = defaultdict(lambda: defaultdict(int))
         category_counts = defaultdict(int)
         cat_detail_map = defaultdict(lambda: {"total": 0, "deflected": 0, "escalated": 0})
         daily_cat_map = defaultdict(lambda: defaultdict(lambda: {"total": 0, "deflected": 0}))
-        csat_values = []
+        csat_values, error_items = [], []
         csat_distribution = {str(i): 0 for i in range(1, 6)}
-        csat_by_day = defaultdict(list)
-        error_items = []
 
+        # Stream and aggregate
         for convo in stream_conversations(min_ts, max_ts):
             total += 1
             is_defl = not (convo.get("undeflected") or convo.get("destination") == "AGENT")
             if is_defl: deflected += 1
             else: escalated += 1
 
-            # Time
             c_ts = convo.get("created_at")
             if c_ts:
-                dt_utc = datetime.fromisoformat(c_ts.replace("Z", "+00:00"))
-                dt_est = dt_utc.astimezone(eastern)
+                dt_est = datetime.fromisoformat(c_ts.replace("Z", "+00:00")).astimezone(eastern)
                 day, hour = dt_est.strftime("%Y-%m-%d"), dt_est.strftime("%H:00")
                 hourly_volume[hour] += 1
                 hourly_by_day[day][hour] += 1
-
-                # CSAT
                 cv = convo.get("csat")
                 if cv and str(cv) in csat_distribution:
                     cv = int(cv)
                     csat_values.append(cv)
                     csat_distribution[str(cv)] += 1
-                    csat_by_day[day].append(cv)
 
-            # Insights / Categories
-            parent_cat = "Uncategorized"
-            subcats = []
+            # Insights
+            parent_cat, subcats = "Uncategorized", []
             all_tags = convo.get("all_tags", {}) or {}
             for h in all_tags.values():
-                h_name = (h.get("name") or "").lower()
-                if "insight" in h_name:
+                if "insight" in (h.get("name") or "").lower():
                     for t in (h.get("tags") or []):
                         if t.get("level") == 0: parent_cat = t.get("name")
                         else: subcats.append(t.get("name"))
                     break
-            
             category_counts[parent_cat] += 1
-            
-            # Map for detail
             for ckey in [(parent_cat, None)] + [(parent_cat, s) for s in subcats]:
                 cat_detail_map[ckey]["total"] += 1
                 if is_defl: cat_detail_map[ckey]["deflected"] += 1
@@ -224,64 +186,44 @@ def compute_stats(start_date: str = None, end_date: str = None):
                     daily_cat_map[d_key][ckey]["total"] += 1
                     if is_defl: daily_cat_map[d_key][ckey]["deflected"] += 1
 
-            # Watchtower / QA
-            reviews = convo.get("watchtower_reviews", [])
-            for r in reviews:
+            # Watchtower
+            for r in convo.get("watchtower_reviews", []):
                 if len(error_items) < 500:
-                    error_items.append({
-                        "id": convo.get("id"),
-                        "job_name": r.get("job_name"),
-                        "result": r.get("result"),
-                        "rationale": r.get("rationale"),
-                        "rubric_score": r.get("rubric_score"),
-                        "category": parent_cat
-                    })
+                    error_items.append({"id":convo.get("id"), "job_name":r.get("job_name"), "result":r.get("result"), "rationale":r.get("rationale"), "rubric_score":r.get("rubric_score"), "category":parent_cat})
 
-        # Calculations
-        deflection_rate = round((deflected/total)*100, 1) if total > 0 else 0
-        csat_avg = round(sum(csat_values)/len(csat_values), 2) if csat_values else 0
+        # Calculate final
         category_pcts = {cat: round((val/total)*100, 1) for cat, val in category_counts.items()} if total > 0 else {}
-        
         day_labels_db = sorted(hourly_by_day.keys())
         day_labels = [d[5:] for d in day_labels_db]
-
-        # Category detail list
+        
         category_detail = []
         parents = sorted(list({k[0] for k in cat_detail_map}), key=lambda p: cat_detail_map[(p, None)]["total"], reverse=True)
         for p in parents:
             p_data = cat_detail_map[(p, None)]
-            row = {
-                "category": p, "subcategory": None, "total": p_data["total"], "deflected": p_data["deflected"],
-                "escalated": p_data["escalated"], "deflection_rate": round((p_data["deflected"]/p_data["total"])*100,1) if p_data["total"]>0 else 0,
-                "percentage": round((p_data["total"]/total)*100, 1) if total>0 else 0,
-                "day_rates": [round((daily_cat_map[d][(p,None)]["deflected"]/daily_cat_map[d][(p,None)]["total"])*100,1) if daily_cat_map[d][(p,None)]["total"]>0 else None for d in day_labels_db]
-            }
-            category_detail.append(row)
-            subs = sorted([k for k in cat_detail_map if k[0] == p and k[1]], key=lambda k: cat_detail_map[k]["total"], reverse=True)
-            for s_key in subs:
+            category_detail.append({
+                "category":p, "subcategory":None, "total":p_data["total"], "deflected":p_data["deflected"], "escalated":p_data["escalated"],
+                "deflection_rate":round((p_data["deflected"]/p_data["total"])*100,1) if p_data["total"]>0 else 0,
+                "percentage":round((p_data["total"]/total)*100, 1) if total>0 else 0,
+                "day_rates":[round((daily_cat_map[d][(p,None)]["deflected"]/daily_cat_map[d][(p,None)]["total"])*100,1) if daily_cat_map[d][(p,None)]["total"]>0 else None for d in day_labels_db]
+            })
+            for s_key in sorted([k for k in cat_detail_map if k[0]==p and k[1]], key=lambda k:cat_detail_map[k]["total"], reverse=True):
                 s_data = cat_detail_map[s_key]
                 category_detail.append({
-                    "category": p, "subcategory": s_key[1], "total": s_data["total"], "deflected": s_data["deflected"],
-                    "escalated": s_data["escalated"], "deflection_rate": round((s_data["deflected"]/s_data["total"])*100,1) if s_data["total"]>0 else 0,
-                    "percentage": round((s_data["total"]/total)*100, 1) if total>0 else 0,
-                    "day_rates": [round((daily_cat_map[d][s_key]["deflected"]/daily_cat_map[d][s_key]["total"])*100,1) if daily_cat_map[d][s_key]["total"]>0 else None for d in day_labels_db]
+                    "category":p, "subcategory":s_key[1], "total":s_data["total"], "deflected":s_data["deflected"], "escalated":s_data["escalated"],
+                    "deflection_rate":round((s_data["deflected"]/s_data["total"])*100,1) if s_data["total"]>0 else 0,
+                    "percentage":round((s_data["total"]/total)*100, 1) if total>0 else 0,
+                    "day_rates":[round((daily_cat_map[d][s_key]["deflected"]/daily_cat_map[d][s_key]["total"])*100,1) if daily_cat_map[d][s_key]["total"]>0 else None for d in day_labels_db]
                 })
 
         local_results = {
             "last_updated": now_est.isoformat(),
-            "start_date": start_dt.strftime("%Y-%m-%d"),
-            "end_date": end_dt.strftime("%Y-%m-%d"),
+            "start_date": start_dt.strftime("%Y-%m-%d"), "end_date": end_dt.strftime("%Y-%m-%d"),
             "date_range": f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}",
-            "deflection_rate": deflection_rate,
-            "categories": category_pcts,
-            "day_labels": day_labels,
-            "category_detail": category_detail,
-            "error_analysis": error_items,
-            "csat": {"average": csat_avg, "total_ratings": len(csat_values), "distribution": csat_distribution},
+            "deflection_rate": round((deflected/total)*100, 1) if total > 0 else 0,
+            "categories": category_pcts, "day_labels": day_labels, "category_detail": category_detail, "error_analysis": error_items,
+            "csat": {"average": round(sum(csat_values)/len(csat_values), 2) if csat_values else 0, "total_ratings": len(csat_values), "distribution": csat_distribution},
             "conversation_totals": {"total": total, "deflected": deflected, "escalated": escalated},
-            "hourly_volume": dict(sorted(hourly_volume.items())),
-            "hourly_by_day": {d: dict(v) for d, v in hourly_by_day.items()},
-            "error": None
+            "hourly_volume": dict(sorted(hourly_volume.items())), "hourly_by_day": {d: dict(v) for d, v in hourly_by_day.items()}, "error": None
         }
 
         if start_date is None and end_date is None:
@@ -289,14 +231,16 @@ def compute_stats(start_date: str = None, end_date: str = None):
             with sqlite3.connect(DB_PATH) as conn:
                 for d in day_labels_db:
                     d_tot = sum(hourly_by_day[d].values())
-                    conn.execute("INSERT OR REPLACE INTO daily_stats (date, total_conversations, deflection_rate, updated_at) VALUES (?,?,?,?)", (d, d_tot, deflection_rate, now_est.isoformat()))
+                    conn.execute("INSERT OR REPLACE INTO daily_stats (date, total_conversations, deflection_rate, updated_at) VALUES (?,?,?,?)", (d, d_tot, local_results["deflection_rate"], now_est.isoformat()))
                 conn.commit()
 
+        if task_id: task_results[task_id] = local_results
         return local_results
 
     except Exception as e:
         logger.error(f"Compute error: {e}", exc_info=True)
         local_stats["error"] = str(e)
+        if task_id: task_results[task_id] = local_stats
         return local_stats
 
 # ---------------------------------------------------------------------------
@@ -305,11 +249,8 @@ def compute_stats(start_date: str = None, end_date: str = None):
 @app.route("/")
 def dashboard():
     try:
-        start, end = request.args.get('start_date'), request.args.get('end_date')
-        if start and end:
-            stats = compute_stats(start, end)
-        else:
-            stats = stats_cache
+        tid = request.args.get('task_id')
+        stats = task_results.get(tid, stats_cache) if tid else stats_cache
         return render_template("dashboard.html", stats=stats)
     except Exception:
         logger.error(f"Dashboard render error: {traceback.format_exc()}")
@@ -318,11 +259,8 @@ def dashboard():
 @app.route("/categories")
 def categories_page():
     try:
-        start, end = request.args.get('start_date'), request.args.get('end_date')
-        if start and end:
-            stats = compute_stats(start, end)
-        else:
-            stats = stats_cache
+        tid = request.args.get('task_id')
+        stats = task_results.get(tid, stats_cache) if tid else stats_cache
         return render_template("categories.html", stats=stats)
     except Exception:
         logger.error(f"Categories render error: {traceback.format_exc()}")
@@ -340,13 +278,28 @@ def history_page():
                 month = dt.strftime("%B %Y")
                 if month not in history_groups: history_groups[month] = []
                 history_groups[month].append(dict(r))
-        
-        sorted_months = sorted(history_groups.keys(), key=lambda m: datetime.strptime(m, "%B %Y"), reverse=True)
-        history_data = [(m, history_groups[m]) for m in sorted_months]
+        history_data = [(m, history_groups[m]) for m in sorted(history_groups.keys(), key=lambda m: datetime.strptime(m, "%B %Y"), reverse=True)]
         return render_template("history.html", stats=stats_cache, history_groups=history_data)
     except Exception:
         logger.error(f"History render error: {traceback.format_exc()}")
         return f"<h1>Internal Server Error</h1><pre>{traceback.format_exc()}</pre>", 500
+
+# API FOR ASYNC COMPUTE
+@app.route("/api/compute_async", methods=["POST"])
+def compute_async():
+    start = request.args.get('start_date')
+    end = request.args.get('end_date')
+    task_id = str(uuid.uuid4())
+    task_results[task_id] = {"status": "pending"}
+    threading.Thread(target=compute_stats, args=(start, end, task_id)).start()
+    return jsonify({"task_id": task_id})
+
+@app.route("/api/task_status/<task_id>")
+def task_status(task_id):
+    res = task_results.get(task_id)
+    if not res: return jsonify({"status": "not_found"}), 404
+    if "status" in res: return jsonify({"status": "pending"})
+    return jsonify({"status": "complete"})
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
@@ -360,7 +313,6 @@ scheduler = BackgroundScheduler(timezone=eastern)
 scheduler.add_job(compute_stats, "cron", hour=0, minute=0)
 scheduler.start()
 
-# Background startup
 logger.info("Service starting, launching background initial fetch...")
 threading.Thread(target=compute_stats).start()
 

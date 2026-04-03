@@ -177,9 +177,29 @@
       text-align: center; color: var(--muted); font-size: 0.75rem;
       margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);
     }
+    /* ---------- LOADING OVERLAY ---------- */
+    #loadingOverlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+      display: none; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 9999; color: var(--text);
+    }
+    .spinner {
+      width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin 1s linear infinite; margin-bottom: 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
   </style>
 </head>
 <body>
+
+<div id="loadingOverlay">
+  <div class="spinner"></div>
+  <div style="font-weight:600; font-size:1.1rem;">Fetching data from Decagon...</div>
+  <div style="color:var(--muted); font-size:0.85rem; margin-top:0.5rem;">This may take up to 60 seconds for large date ranges</div>
+</div>
 
 <!-- NAV -->
 <nav class="topnav">
@@ -429,19 +449,39 @@
   }
 
   // ---- Date range apply ----
-  function applyDateRange(btn) {
+  async function applyDateRange(btn) {
     const start = document.getElementById('startDate').value;
     const end   = document.getElementById('endDate').value;
     if (!start || !end) { alert('Please select both dates.'); return; }
 
-    btn.innerText = "Applying...";
-    btn.disabled = true;
+    // Show loading overlay
+    document.getElementById('loadingOverlay').style.display = 'flex';
     
-    const params = new URLSearchParams(window.location.search);
-    params.set('start_date', start);
-    params.set('end_date', end);
-    
-    window.location.href = window.location.pathname + '?' + params.toString();
+    try {
+      // 1. Start the async task
+      const resp = await fetch(`/api/compute_async?start_date=${start}&end_date=${end}`, { method: 'POST' });
+      const data = await resp.json();
+      const taskId = data.task_id;
+
+      // 2. Poll for results
+      const poll = setInterval(async () => {
+        const sResp = await fetch(`/api/task_status/${taskId}`);
+        const sData = await sResp.json();
+        
+        if (sData.status === 'complete') {
+          clearInterval(poll);
+          window.location.href = window.location.pathname + '?task_id=' + taskId;
+        } else if (sData.status === 'not_found') {
+          clearInterval(poll);
+          alert("Task lost. Please try again.");
+          document.getElementById('loadingOverlay').style.display = 'none';
+        }
+      }, 2000);
+    } catch (e) {
+      console.error(e);
+      alert("Failed to start task.");
+      document.getElementById('loadingOverlay').style.display = 'none';
+    }
   }
 </script>
 </body>
