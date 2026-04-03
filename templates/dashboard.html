@@ -250,11 +250,20 @@
       </div>
     </div>
     <div class="chart-card" style="display:flex; flex-direction:column;">
-      <h2>Deflection Rate</h2>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.6rem;">
+        <h2 style="margin:0;">Deflection Rate &amp; Hourly Volume</h2>
+        <div style="display:flex; align-items:center; gap:.5rem;">
+          <label for="dayPicker" style="color:var(--muted); font-size:.75rem;">Day:</label>
+          <select id="dayPicker" onchange="updateHourlyCharts()"
+            style="background:var(--bg); color:var(--text); border:1px solid var(--border);
+                   border-radius:6px; padding:.25rem .6rem; font-size:.78rem; cursor:pointer;">
+          </select>
+        </div>
+      </div>
       <div class="chart-wrap line-wrap" style="flex:1;">
         <canvas id="deflectionLine"></canvas>
       </div>
-      <h2 style="margin-top:1.2rem;">Hourly Volume Breakdown</h2>
+      <h2 style="margin-top:1.2rem; margin-bottom:.6rem;">Hourly Volume Breakdown</h2>
       <div class="chart-wrap bar-wrap" style="flex:1;">
         <canvas id="hourlyBar"></canvas>
       </div>
@@ -297,9 +306,9 @@
 </div>
 
 <script>
-  const categories = {{ stats.categories | tojson }};
-  const hourlyVol  = {{ stats.hourly_volume | tojson }};
-  const convoData  = {{ stats.conversation_totals | tojson }};
+  const categories   = {{ stats.categories | tojson }};
+  const hourlyByDay  = {{ stats.hourly_by_day | tojson }};
+  const convoData    = {{ stats.conversation_totals | tojson }};
 
   // ---- Palette ----
   const palette = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#84cc16','#06b6d4','#f97316'];
@@ -329,24 +338,51 @@
     }
   });
 
-  // ---- Deflection Rate Line (per hour) ----
-  const hourKeys  = Object.keys(hourlyVol).sort();
-  const deflRates = hourKeys.map(h => {
-    const d = hourlyVol[h];
-    return d.total > 0 ? +((d.deflected / d.total) * 100).toFixed(1) : 0;
+  // ---- Day picker ----
+  const dayKeys = Object.keys(hourlyByDay).sort();
+  const picker  = document.getElementById('dayPicker');
+
+  // Populate options — most recent day first, selected by default
+  const orderedDays = [...dayKeys].reverse();
+  orderedDays.forEach((day, i) => {
+    const opt = document.createElement('option');
+    opt.value = day;
+    opt.textContent = day;
+    if (i === 0) opt.selected = true;
+    picker.appendChild(opt);
   });
-  new Chart(document.getElementById('deflectionLine'), {
+
+  // ---- Hourly charts (shared Chart.js instances so we can update them) ----
+  const HOURS = Array.from({length: 24}, (_, i) => String(i).padStart(2,'0') + ':00');
+
+  function getHourlyData(day) {
+    const vol = hourlyByDay[day] || {};
+    const deflRates = HOURS.map(h => {
+      const d = vol[h];
+      return d && d.total > 0 ? +((d.deflected / d.total) * 100).toFixed(1) : null;
+    });
+    const totals    = HOURS.map(h => (vol[h] || {}).total     || 0);
+    const deflected = HOURS.map(h => (vol[h] || {}).deflected || 0);
+    const escalated = HOURS.map(h => ((vol[h] || {}).total || 0) - ((vol[h] || {}).deflected || 0));
+    return { deflRates, totals, deflected, escalated };
+  }
+
+  const initDay  = orderedDays[0] || null;
+  const initData = initDay ? getHourlyData(initDay) : { deflRates: [], deflected: [], escalated: [] };
+
+  const lineChart = new Chart(document.getElementById('deflectionLine'), {
     type: 'line',
     data: {
-      labels: hourKeys,
+      labels: HOURS,
       datasets: [{
-        data: deflRates,
+        data: initData.deflRates,
         borderColor: '#6366f1',
         backgroundColor: 'rgba(99,102,241,0.15)',
         fill: true,
         tension: 0.4,
-        pointRadius: 3,
+        pointRadius: 2,
         pointBackgroundColor: '#6366f1',
+        spanGaps: true,
       }]
     },
     options: {
@@ -360,17 +396,13 @@
     }
   });
 
-  // ---- Hourly Volume Bar ----
-  const hourTotals     = hourKeys.map(h => hourlyVol[h].total);
-  const hourDeflected  = hourKeys.map(h => hourlyVol[h].deflected);
-  const hourEscalated  = hourKeys.map(h => hourlyVol[h].total - hourlyVol[h].deflected);
-  new Chart(document.getElementById('hourlyBar'), {
+  const barChart = new Chart(document.getElementById('hourlyBar'), {
     type: 'bar',
     data: {
-      labels: hourKeys,
+      labels: HOURS,
       datasets: [
-        { label: 'Deflected', data: hourDeflected, backgroundColor: '#6366f1', borderRadius: 3, stack: 'vol' },
-        { label: 'Escalated', data: hourEscalated, backgroundColor: '#374151', borderRadius: 3, stack: 'vol' },
+        { label: 'Deflected', data: initData.deflected, backgroundColor: '#6366f1', borderRadius: 3, stack: 'vol' },
+        { label: 'Escalated', data: initData.escalated, backgroundColor: '#374151', borderRadius: 3, stack: 'vol' },
       ]
     },
     options: {
@@ -383,6 +415,16 @@
       }
     }
   });
+
+  function updateHourlyCharts() {
+    const day  = picker.value;
+    const data = getHourlyData(day);
+    lineChart.data.datasets[0].data = data.deflRates;
+    lineChart.update('none');
+    barChart.data.datasets[0].data = data.deflected;
+    barChart.data.datasets[1].data = data.escalated;
+    barChart.update('none');
+  }
 
   // ---- Date range apply ----
   async function applyDateRange(btn) {

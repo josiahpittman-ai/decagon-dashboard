@@ -55,6 +55,7 @@ stats_cache = {
         "escalated": 0,
     },
     "hourly_volume": {},
+    "hourly_by_day": {},
     "error": None,
 }
 
@@ -163,6 +164,8 @@ def compute_stats(start_date: str = None, end_date: str = None):
 
     # Hourly volume: key = "HH:00", value = {"total": int, "deflected": int}
     hourly_volume = {}
+    # Per-day hourly: {"YYYY-MM-DD": {"HH:00": {"total": int, "deflected": int}}}
+    hourly_by_day = {}
 
     # Daily per-category: daily_cat_map[day_str][(parent, sub)] = {total, deflected}
     daily_cat_map = {}
@@ -183,11 +186,21 @@ def compute_stats(start_date: str = None, end_date: str = None):
         try:
             created_dt = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
             hour_key = created_dt.strftime("%H:00")
+            day_key  = created_dt.strftime("%Y-%m-%d")
+            # Aggregate
             if hour_key not in hourly_volume:
                 hourly_volume[hour_key] = {"total": 0, "deflected": 0}
             hourly_volume[hour_key]["total"] += 1
             if not is_escalated:
                 hourly_volume[hour_key]["deflected"] += 1
+            # Per-day
+            if day_key not in hourly_by_day:
+                hourly_by_day[day_key] = {}
+            if hour_key not in hourly_by_day[day_key]:
+                hourly_by_day[day_key][hour_key] = {"total": 0, "deflected": 0}
+            hourly_by_day[day_key][hour_key]["total"] += 1
+            if not is_escalated:
+                hourly_by_day[day_key][hour_key]["deflected"] += 1
         except (ValueError, AttributeError):
             pass
 
@@ -404,6 +417,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
             "escalated": escalated,
         },
         "hourly_volume": dict(sorted(hourly_volume.items())),
+        "hourly_by_day": {d: dict(sorted(v.items())) for d, v in sorted(hourly_by_day.items())},
         "error": None,
     }
     logger.info(f"Stats refreshed: {json.dumps(stats_cache, indent=2)}")
