@@ -193,16 +193,24 @@ def compute_stats(start_date: str = None, end_date: str = None):
 
         # ---- Categories from Insight tags (all_tags hierarchy) ----
         # all_tags is a dict of {hierarchy_id: {name: str, tags: [...]}}
-        # We prefer the hierarchy whose name contains "insight" (case-insensitive).
+        # Skip intent hierarchies where top-level tags start with "I " (e.g. "I need...")
         parent_cat = None
         subcategories = []
 
         all_tags = convo.get("all_tags", {}) or {}
 
-        # Find the Insights hierarchy first; fall back to first available.
+        def _looks_like_intent(h):
+            top = [t.get("name", "") for t in (h.get("tags") or []) if t.get("level", 0) == 0]
+            if not top:
+                return False
+            intent = sum(1 for n in top if n.strip().lower().startswith("i "))
+            return (intent / len(top)) > 0.4
+
         insight_hierarchy = None
         fallback_hierarchy = None
         for hierarchy_id, hierarchy in all_tags.items():
+            if _looks_like_intent(hierarchy):
+                continue  # skip intent hierarchies
             h_name = (hierarchy.get("name") or "").lower()
             if "insight" in h_name:
                 insight_hierarchy = hierarchy
