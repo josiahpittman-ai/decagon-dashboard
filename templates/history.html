@@ -90,24 +90,31 @@
       white-space: nowrap;
       color: var(--muted);
     }
-    .cat-pill b { color: var(--accent); margin-left: 3px; }
-
-    .search-box {
-      background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 0.8rem; border-radius: 4px; font-size: 0.8rem; width: 250px;
+    .month-section { margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg); }
+    .month-header {
+      background: var(--card); padding: 1rem 1.5rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between;
+      list-style: none;
+      border-bottom: 1px solid var(--border);
     }
+    .month-header::-webkit-details-marker { display: none; }
+    .month-header:hover { background: rgba(255,255,255,0.02); }
     
-    .footer {
-      text-align: center; color: var(--muted); font-size: 0.75rem;
-      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);
-    }
+    .month-title { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+    .month-count { font-size: 0.85rem; color: var(--muted); margin-left: auto; margin-right: 1.5rem; }
+    .chevron { font-size: 0.7rem; color: var(--muted); transition: transform 0.2s; }
+    .month-section[open] .chevron { transform: rotate(180deg); }
+    .month-section[open] .month-header { border-bottom: 1px solid var(--border); }
+    .month-section:not([open]) .month-header { border-bottom: none; }
   </style>
 </head>
 <body>
 <nav class="topnav">
   <span class="brand">Decagon Stats</span>
   <div class="nav-links">
-    <a href="/">Overview</a>
-    <a href="/categories">Categories</a>
+    {% set query = '?start_date=' + stats.start_date + '&end_date=' + stats.end_date if stats.start_date and stats.end_date else '' %}
+    <a href="/{{ query }}">Overview</a>
+    <a href="/categories{{ query }}">Categories</a>
     <a href="/history" class="active">Daily History</a>
   </div>
   <span style="font-size:.78rem;color:var(--muted);">
@@ -118,55 +125,67 @@
 <div class="container">
   
   <div class="header-info">
-    <span>Metrics aggregated day by day (EST).</span>
+    <span>Metrics aggregated day by day (EST). Organized by month.</span>
     <input type="text" id="rowSearch" class="search-box" placeholder="Filter by date or category...">
   </div>
 
-  <div class="table-wrap">
-    <table class="history-table" id="historyTable">
-      <thead>
-        <tr>
-          <th>Date (EST)</th>
-          <th class="num-col">Total</th>
-          <th class="num-col">Deflected</th>
-          <th class="num-col">Rate</th>
-          <th class="num-col">CSAT</th>
-          <th>Category Breakdown (Insight Tags)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in history %}
-        <tr class="history-row">
-          <td class="bold-cell">{{ row.date }}</td>
-          <td class="num-cell">{{ row.total_conversations }}</td>
-          <td class="num-cell">{{ row.deflected }}</td>
-          <td class="num-cell">
-            <span class="heat-badge" style="{{ 'background:rgba(34,197,94,0.25);color:#bbf7d0' if row.deflection_rate >= 60 else ('background:rgba(245,158,11,0.25);color:#fde68a' if row.deflection_rate >= 40 else 'background:rgba(239,68,68,0.30);color:#fecaca') }}">
-              {{ row.deflection_rate }}%
-            </span>
-          </td>
-          <td class="num-cell">
-            {{ row.csat_average if row.csat_average else '—' }}
-          </td>
-          <td>
-            <div class="cat-breakdown">
-              {% for cat in row.categories %}
-                {% if not cat.subcategory %}
-                  <div class="cat-pill">
-                    {{ cat.category }}: <b>{{ cat.total_conversations }}</b>
-                  </div>
-                {% endif %}
-              {% endfor %}
-            </div>
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="6" style="text-align:center; padding: 2rem; color: var(--muted);">No historical data stored yet.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="history-groups">
+    {% for month_name, rows in history_groups %}
+    <details class="month-section" {{ 'open' if loop.first else '' }}>
+      <summary class="month-header">
+        <span class="month-title">{{ month_name }}</span>
+        <span class="month-count">{{ rows|length }} days</span>
+        <span class="chevron">▼</span>
+      </summary>
+      
+      <div class="table-wrap">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Date (EST)</th>
+              <th class="num-col">Total</th>
+              <th class="num-col">Deflected</th>
+              <th class="num-col">Rate</th>
+              <th class="num-col">CSAT</th>
+              <th>Category Breakdown</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr class="history-row">
+              <td class="bold-cell">{{ row.date }}</td>
+              <td class="num-cell">{{ row.total_conversations }}</td>
+              <td class="num-cell">{{ row.deflected }}</td>
+              <td class="num-cell">
+                <span class="heat-badge" style="{{ 'background:rgba(34,197,94,0.25);color:#bbf7d0' if row.deflection_rate >= 60 else ('background:rgba(245,158,11,0.25);color:#fde68a' if row.deflection_rate >= 40 else 'background:rgba(239,68,68,0.30);color:#fecaca') }}">
+                  {{ row.deflection_rate }}%
+                </span>
+              </td>
+              <td class="num-cell">
+                {{ row.csat_average if row.csat_average else '—' }}
+              </td>
+              <td>
+                <div class="cat-breakdown">
+                  {% for cat in row.categories %}
+                    {% if not cat.subcategory %}
+                      <div class="cat-pill">
+                        {{ cat.category }}: <b>{{ cat.total_conversations }}</b>
+                      </div>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% else %}
+    <div style="text-align:center; padding: 4rem; color: var(--muted); background: var(--card); border: 1px solid var(--border); border-radius: 8px;">
+      No historical data stored yet.
+    </div>
+    {% endfor %}
   </div>
 
   <div class="footer">

@@ -526,17 +526,25 @@ def compute_stats(start_date: str = None, end_date: str = None):
 # ---------------------------------------------------------------------------
 @app.route("/")
 def dashboard():
+    start = request.args.get('start_date')
+    end = request.args.get('end_date')
+    if start and end:
+        compute_stats(start_date=start, end_date=end)
     return render_template("dashboard.html", stats=stats_cache)
 
 
 @app.route("/categories")
 def categories_page():
+    start = request.args.get('start_date')
+    end = request.args.get('end_date')
+    if start and end:
+        compute_stats(start_date=start, end_date=end)
     return render_template("categories.html", stats=stats_cache)
 
 
 @app.route("/history")
 def history_page():
-    history_data = []
+    history_groups = {} # { "Month Year": [rows] }
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
@@ -559,14 +567,28 @@ def history_page():
                     cat_by_date[d] = []
                 cat_by_date[d].append(dict(cr))
             
-            # 3. Merge category data into main history rows
+            # 3. Merge category data and group by month
             for row in daily_rows:
                 row["categories"] = cat_by_date.get(row["date"], [])
-            
-            history_data = daily_rows
+                # Grouping key like "March 2026"
+                dt = datetime.strptime(row["date"], "%Y-%m-%d")
+                month_key = dt.strftime("%B %Y")
+                if month_key not in history_groups:
+                    history_groups[month_key] = []
+                history_groups[month_key].append(row)
+                
     except Exception as e:
         logger.error(f"Failed to fetch history: {e}")
-    return render_template("history.html", stats=stats_cache, history=history_data)
+    
+    # Sort groups: most recent month first
+    sorted_months = sorted(
+        history_groups.keys(), 
+        key=lambda m: datetime.strptime(m, "%B %Y"), 
+        reverse=True
+    )
+    history_data = [(month, history_groups[month]) for month in sorted_months]
+    
+    return render_template("history.html", stats=stats_cache, history_groups=history_data)
 
 
 @app.route("/api/stats")
