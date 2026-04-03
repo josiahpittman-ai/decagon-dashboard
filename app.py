@@ -496,7 +496,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
 
     # -- 2. Update cache -------------------------------------------------------
     stats_cache = {
-        "last_updated": now_utc.isoformat(),
+        "last_updated": now_est.isoformat(),
         "date_range": f"{start_dt_est.strftime('%Y-%m-%d')} to {end_dt_est.strftime('%Y-%m-%d')}",
         "start_date": start_dt_est.strftime("%Y-%m-%d"),
         "end_date": end_dt_est.strftime("%Y-%m-%d"),
