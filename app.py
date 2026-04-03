@@ -17,6 +17,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
+import pytz
 import requests
 from flask import Flask, render_template, jsonify, request
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -126,26 +127,29 @@ def compute_stats(start_date: str = None, end_date: str = None):
         logger.error(stats_cache["error"])
         return
 
-    now = datetime.now(timezone.utc)
+    # We'll calculate days based on US/Eastern time
+    eastern = pytz.timezone("US/Eastern")
+    now_utc = datetime.now(timezone.utc)
+    now_est = now_utc.astimezone(eastern)
 
     if start_date:
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        start_dt_est = eastern.localize(datetime.strptime(start_date, "%Y-%m-%d"))
     else:
-        start_dt = now - timedelta(days=1)
+        start_dt_est = (now_est - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
     if end_date:
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
-            hour=23, minute=59, second=59, tzinfo=timezone.utc
+        end_dt_est = eastern.localize(datetime.strptime(end_date, "%Y-%m-%d")).replace(
+            hour=23, minute=59, second=59, microsecond=999999
         )
     else:
-        end_dt = now
+        end_dt_est = now_est
 
-    min_ts = start_dt.timestamp()
-    max_ts = end_dt.timestamp()
+    min_ts = start_dt_est.timestamp()
+    max_ts = end_dt_est.timestamp()
 
     logger.info(
-        f"Refreshing stats for {start_dt.strftime('%Y-%m-%d')} "
-        f"→ {end_dt.strftime('%Y-%m-%d')} UTC"
+        f"Refreshing stats for {start_dt_est.strftime('%Y-%m-%d')} "
+        f"→ {end_dt_est.strftime('%Y-%m-%d')} EST"
     )
 
     # -- 1. Pull conversations -------------------------------------------------
@@ -184,9 +188,10 @@ def compute_stats(start_date: str = None, end_date: str = None):
         # ---- Hourly volume ----
         created_at_str = convo.get("created_at", "")
         try:
-            created_dt = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
-            hour_key = created_dt.strftime("%H:00")
-            day_key  = created_dt.strftime("%Y-%m-%d")
+            created_dt_utc = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+            created_dt_est = created_dt_utc.astimezone(eastern)
+            hour_key = created_dt_est.strftime("%H:00")
+            day_key  = created_dt_est.strftime("%Y-%m-%d")
             # Aggregate
             if hour_key not in hourly_volume:
                 hourly_volume[hour_key] = {"total": 0, "deflected": 0}
@@ -268,8 +273,9 @@ def compute_stats(start_date: str = None, end_date: str = None):
         # Daily per-category tracking
         created_at_str2 = convo.get("created_at", "")
         try:
-            created_dt2 = datetime.fromisoformat(created_at_str2.replace("Z", "+00:00"))
-            day_str = created_dt2.strftime("%m/%d")
+            created_dt_utc2 = datetime.fromisoformat(created_at_str2.replace("Z", "+00:00"))
+            created_dt_est2 = created_dt_utc2.astimezone(eastern)
+            day_str = created_dt_est2.strftime("%m/%d")
             if day_str not in daily_cat_map:
                 daily_cat_map[day_str] = {}
             for ckey in [(parent_cat, None)] + [(parent_cat, s) for s in subcategories]:
@@ -397,10 +403,10 @@ def compute_stats(start_date: str = None, end_date: str = None):
 
     # -- 2. Update cache -------------------------------------------------------
     stats_cache = {
-        "last_updated": now.isoformat(),
-        "date_range": f"{start_dt.strftime('%Y-%m-%d')} to {end_dt.strftime('%Y-%m-%d')}",
-        "start_date": start_dt.strftime("%Y-%m-%d"),
-        "end_date": end_dt.strftime("%Y-%m-%d"),
+        "last_updated": now_utc.isoformat(),
+        "date_range": f"{start_dt_est.strftime('%Y-%m-%d')} to {end_dt_est.strftime('%Y-%m-%d')}",
+        "start_date": start_dt_est.strftime("%Y-%m-%d"),
+        "end_date": end_dt_est.strftime("%Y-%m-%d"),
         "deflection_rate": deflection_rate,
         "categories": category_pcts,
         "day_labels": day_labels,
