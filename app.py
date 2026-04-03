@@ -240,7 +240,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
         # ---- Watchtower / Auto QA Reviews ----
         watchtower = convo.get("watchtower_reviews", [])
         for review in watchtower:
-            result = review.get("result", "")
+            result = review.get("result") or ""
             # Track all reviews, but flag failures/issues prominently
             rubric_score = review.get("rubric_score")
             rubric_review = review.get("rubric_review") or {}
