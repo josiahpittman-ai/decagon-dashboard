@@ -243,7 +243,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
             result = review.get("result", "")
             # Track all reviews, but flag failures/issues prominently
             rubric_score = review.get("rubric_score")
-            rubric_review = review.get("rubric_review", {})
+            rubric_review = review.get("rubric_review") or {}
 
             # Collect failed rubric fields
             failed_fields = []
