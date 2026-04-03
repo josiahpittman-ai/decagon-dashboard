@@ -103,15 +103,12 @@ def _headers():
     }
 
 
-def export_all_conversations(min_ts: float, max_ts: float) -> list:
+def stream_conversations(min_ts: float, max_ts: float):
     """
-    Paginated fetch from GET /conversation/export.
-
-    Uses cursor-based pagination. Timestamps are Unix epoch floats.
-    Returns the full list of conversation objects for the time range.
+    Streamed fetch from GET /conversation/export using pagination.
+    Timestamps are Unix epoch floats. Yields conversation objects.
     """
     url = f"{DECAGON_API_BASE}/conversation/export"
-    all_conversations = []
     cursor = None
 
     while True:
@@ -133,14 +130,12 @@ def export_all_conversations(min_ts: float, max_ts: float) -> list:
             break
 
         conversations = data.get("conversations", [])
-        all_conversations.extend(conversations)
+        for convo in conversations:
+            yield convo
 
         cursor = data.get("next_cursor")
         if not cursor or len(conversations) == 0:
             break
-
-    logger.info(f"Fetched {len(all_conversations)} conversations")
-    return all_conversations
 
 
 # ---------------------------------------------------------------------------
@@ -184,10 +179,9 @@ def compute_stats(start_date: str = None, end_date: str = None):
         f"→ {end_dt_est.strftime('%Y-%m-%d')} EST"
     )
 
-    # -- 1. Pull conversations -------------------------------------------------
-    conversations = export_all_conversations(min_ts, max_ts)
-
-    total = len(conversations)
+    # -- 1. Stream conversations -----------------------------------------------
+    gen = stream_conversations(min_ts, max_ts)
+    total = 0
     deflected = 0
     escalated = 0
     category_counts = {}
@@ -209,7 +203,20 @@ def compute_stats(start_date: str = None, end_date: str = None):
     # Daily per-category: daily_cat_map[day_str][(parent, sub)] = {total, deflected}
     daily_cat_map = {}
 
-    for convo in conversations:
+    for convo in gen:
+        total += 1
+        
+        # Save memory: strip huge fields we don't need
+        # only keep what's strictly used for calculations
+        # (reduces RAM footprint of each object stored in history_data or error_analysis)
+        keys_to_keep = {
+            "undeflected", "destination", "created_at", "conversation_tags", 
+            "categories_tags", "csat", "rubric_score", "result", 
+            "job_name", "rationale", "conversation_id"
+        }
+        for k in list(convo.keys()):
+            if k not in keys_to_keep:
+                del convo[k]
         # ---- Deflection / Escalation ----
         is_undeflected = convo.get("undeflected", False)
         destination = convo.get("destination", "")
@@ -419,6 +426,8 @@ def compute_stats(start_date: str = None, end_date: str = None):
         0 if x["result"].lower() in ("fail", "failed") else 1,
         x["rubric_score"] if x["rubric_score"] is not None else 999,
     ))
+    # Limit to top 500 error entries to prevent OOM on massive backfills
+    error_items = error_items[:500]
 
     # CSAT average
     csat_avg = round(sum(csat_values) / len(csat_values), 2) if csat_values else None
