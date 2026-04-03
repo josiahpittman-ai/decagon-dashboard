@@ -11,6 +11,8 @@ import os
 import json
 import logging
 import sqlite3
+import threading
+import traceback
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 
@@ -68,7 +70,7 @@ stats_cache = {
     "last_updated": None,
     "start_date": None,
     "end_date": None,
-    "date_range": None,
+    "date_range": "Initializing data...",
     "deflection_rate": 0,
     "categories": {},
     "day_labels": [],
@@ -127,18 +129,19 @@ def compute_stats(start_date: str = None, end_date: str = None):
     
     local_stats = {
         "last_updated": None,
-        "start_date": start_date,
-        "end_date": end_date,
-        "error": None,
-        "conversation_totals": {"total": 0, "deflected": 0, "escalated": 0},
+        "start_date": start_date or (datetime.now(eastern) - timedelta(days=7)).strftime("%Y-%m-%d"),
+        "end_date": end_date or datetime.now(eastern).strftime("%Y-%m-%d"),
+        "date_range": "Refreshing...",
         "deflection_rate": 0,
         "categories": {},
         "day_labels": [],
         "category_detail": [],
         "error_analysis": [],
         "csat": {"average": 0, "total_ratings": 0, "distribution": {}},
+        "conversation_totals": {"total": 0, "deflected": 0, "escalated": 0},
         "hourly_volume": {},
         "hourly_by_day": {},
+        "error": None,
     }
 
     if not DECAGON_API_KEY:
@@ -167,20 +170,12 @@ def compute_stats(start_date: str = None, end_date: str = None):
         hourly_volume = defaultdict(int)
         hourly_by_day = defaultdict(lambda: defaultdict(int))
         category_counts = defaultdict(int)
-        category_deflected = defaultdict(int)
         cat_detail_map = defaultdict(lambda: {"total": 0, "deflected": 0, "escalated": 0})
         daily_cat_map = defaultdict(lambda: defaultdict(lambda: {"total": 0, "deflected": 0}))
         csat_values = []
         csat_distribution = {str(i): 0 for i in range(1, 6)}
         csat_by_day = defaultdict(list)
         error_items = []
-
-        # Memory safe stripping
-        keys_to_keep = {
-            "undeflected", "destination", "created_at", "all_tags", 
-            "conversation_tags", "categories_tags", "csat", "rubric_score", 
-            "result", "job_name", "rationale"
-        }
 
         for convo in stream_conversations(min_ts, max_ts):
             total += 1
@@ -191,20 +186,19 @@ def compute_stats(start_date: str = None, end_date: str = None):
             # Time
             c_ts = convo.get("created_at")
             if c_ts:
-                dt = datetime.fromisoformat(c_ts.replace("Z", "+00:00")).astimezone(eastern)
-                day, hour = dt.strftime("%Y-%m-%d"), dt.strftime("%H:00")
+                dt_utc = datetime.fromisoformat(c_ts.replace("Z", "+00:00"))
+                dt_est = dt_utc.astimezone(eastern)
+                day, hour = dt_est.strftime("%Y-%m-%d"), dt_est.strftime("%H:00")
                 hourly_volume[hour] += 1
                 hourly_by_day[day][hour] += 1
 
-            # CSAT
-            cv = convo.get("csat")
-            if cv and str(cv) in csat_distribution:
-                cv = int(cv)
-                csat_values.append(cv)
-                csat_distribution[str(cv)] += 1
-                if c_ts:
-                    day_ca = datetime.fromisoformat(c_ts.replace("Z", "+00:00")).astimezone(eastern).strftime("%Y-%m-%d")
-                    csat_by_day[day_ca].append(cv)
+                # CSAT
+                cv = convo.get("csat")
+                if cv and str(cv) in csat_distribution:
+                    cv = int(cv)
+                    csat_values.append(cv)
+                    csat_distribution[str(cv)] += 1
+                    csat_by_day[day].append(cv)
 
             # Insights / Categories
             parent_cat = "Uncategorized"
@@ -219,7 +213,6 @@ def compute_stats(start_date: str = None, end_date: str = None):
                     break
             
             category_counts[parent_cat] += 1
-            if is_defl: category_deflected[parent_cat] += 1
             
             # Map for detail
             for ckey in [(parent_cat, None)] + [(parent_cat, s) for s in subcats]:
@@ -247,7 +240,6 @@ def compute_stats(start_date: str = None, end_date: str = None):
         # Calculations
         deflection_rate = round((deflected/total)*100, 1) if total > 0 else 0
         csat_avg = round(sum(csat_values)/len(csat_values), 2) if csat_values else 0
-        
         category_pcts = {cat: round((val/total)*100, 1) for cat, val in category_counts.items()} if total > 0 else {}
         
         day_labels_db = sorted(hourly_by_day.keys())
@@ -265,7 +257,6 @@ def compute_stats(start_date: str = None, end_date: str = None):
                 "day_rates": [round((daily_cat_map[d][(p,None)]["deflected"]/daily_cat_map[d][(p,None)]["total"])*100,1) if daily_cat_map[d][(p,None)]["total"]>0 else None for d in day_labels_db]
             }
             category_detail.append(row)
-            # subs
             subs = sorted([k for k in cat_detail_map if k[0] == p and k[1]], key=lambda k: cat_detail_map[k]["total"], reverse=True)
             for s_key in subs:
                 s_data = cat_detail_map[s_key]
@@ -293,16 +284,12 @@ def compute_stats(start_date: str = None, end_date: str = None):
             "error": None
         }
 
-        # Background update vs Scoped return
         if start_date is None and end_date is None:
             stats_cache = local_results
-            # Sync to DB
             with sqlite3.connect(DB_PATH) as conn:
                 for d in day_labels_db:
                     d_tot = sum(hourly_by_day[d].values())
-                    # approximation for deflection history
-                    d_rate = round(local_results["deflection_rate"], 1) # fallback
-                    conn.execute("INSERT OR REPLACE INTO daily_stats (date, total_conversations, deflection_rate, updated_at) VALUES (?,?,?,?)", (d, d_tot, d_rate, now_est.isoformat()))
+                    conn.execute("INSERT OR REPLACE INTO daily_stats (date, total_conversations, deflection_rate, updated_at) VALUES (?,?,?,?)", (d, d_tot, deflection_rate, now_est.isoformat()))
                 conn.commit()
 
         return local_results
@@ -317,20 +304,34 @@ def compute_stats(start_date: str = None, end_date: str = None):
 # ---------------------------------------------------------------------------
 @app.route("/")
 def dashboard():
-    start, end = request.args.get('start_date'), request.args.get('end_date')
-    stats = compute_stats(start, end) if (start and end) else stats_cache
-    return render_template("dashboard.html", stats=stats)
+    try:
+        start, end = request.args.get('start_date'), request.args.get('end_date')
+        if start and end:
+            stats = compute_stats(start, end)
+        else:
+            stats = stats_cache
+        return render_template("dashboard.html", stats=stats)
+    except Exception:
+        logger.error(f"Dashboard render error: {traceback.format_exc()}")
+        return f"<h1>Internal Server Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
 @app.route("/categories")
 def categories_page():
-    start, end = request.args.get('start_date'), request.args.get('end_date')
-    stats = compute_stats(start, end) if (start and end) else stats_cache
-    return render_template("categories.html", stats=stats)
+    try:
+        start, end = request.args.get('start_date'), request.args.get('end_date')
+        if start and end:
+            stats = compute_stats(start, end)
+        else:
+            stats = stats_cache
+        return render_template("categories.html", stats=stats)
+    except Exception:
+        logger.error(f"Categories render error: {traceback.format_exc()}")
+        return f"<h1>Internal Server Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
 @app.route("/history")
 def history_page():
-    history_groups = {}
     try:
+        history_groups = {}
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT * FROM daily_stats ORDER BY date DESC").fetchall()
@@ -339,16 +340,18 @@ def history_page():
                 month = dt.strftime("%B %Y")
                 if month not in history_groups: history_groups[month] = []
                 history_groups[month].append(dict(r))
-    except Exception as e: logger.error(f"History query fail: {e}")
-    
-    sorted_months = sorted(history_groups.keys(), key=lambda m: datetime.strptime(m, "%B %Y"), reverse=True)
-    history_data = [(m, history_groups[m]) for m in sorted_months]
-    return render_template("history.html", stats=stats_cache, history_groups=history_data)
+        
+        sorted_months = sorted(history_groups.keys(), key=lambda m: datetime.strptime(m, "%B %Y"), reverse=True)
+        history_data = [(m, history_groups[m]) for m in sorted_months]
+        return render_template("history.html", stats=stats_cache, history_groups=history_data)
+    except Exception:
+        logger.error(f"History render error: {traceback.format_exc()}")
+        return f"<h1>Internal Server Error</h1><pre>{traceback.format_exc()}</pre>", 500
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
-    compute_stats()
-    return jsonify({"status": "ok"})
+    threading.Thread(target=compute_stats).start()
+    return jsonify({"status": "ok", "message": "Refresh started in background"})
 
 # ---------------------------------------------------------------------------
 # Scheduler & Startup
@@ -357,9 +360,9 @@ scheduler = BackgroundScheduler(timezone=eastern)
 scheduler.add_job(compute_stats, "cron", hour=0, minute=0)
 scheduler.start()
 
-# Initial load
-logger.info("Service starting, refreshing cache...")
-compute_stats()
+# Background startup
+logger.info("Service starting, launching background initial fetch...")
+threading.Thread(target=compute_stats).start()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
