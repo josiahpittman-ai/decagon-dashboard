@@ -587,7 +587,16 @@ scheduler.start()
 # Startup
 # ---------------------------------------------------------------------------
 # Run initial fetch on startup
+logger.info("Running startup 24h refresh...")
 compute_stats()
+
+# One-time backfill for last calendar month (March 2026) as requested
+try:
+    logger.info("Running manual backfill for March 2026...")
+    compute_stats(start_date="2026-03-01", end_date="2026-03-31")
+    logger.info("Backfill for March 2026 complete.")
+except Exception as e:
+    logger.error(f"Backfill failed: {e}")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, debug=False)
