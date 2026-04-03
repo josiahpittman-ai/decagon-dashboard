@@ -13,6 +13,7 @@
       --text: #e4e4e7;
       --muted: #8b8d97;
       --accent: #6366f1;
+      --accent2: #818cf8;
       --green: #22c55e;
       --amber: #f59e0b;
       --red: #ef4444;
@@ -23,294 +24,329 @@
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      padding: 2rem;
     }
-    .header {
+
+    /* ---------- NAV ---------- */
+    .topnav {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      margin-bottom: 2rem;
+      justify-content: space-between;
+      padding: 0 2rem;
+      height: 52px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
     }
-    .header h1 {
-      font-size: 1.75rem;
-      font-weight: 700;
-    }
-    .header .meta {
+    .topnav .brand { font-weight: 700; font-size: 1rem; color: var(--accent); letter-spacing: .03em; }
+    .topnav .nav-links { display: flex; gap: 1.5rem; }
+    .topnav .nav-links a {
+      text-decoration: none;
       color: var(--muted);
-      font-size: 0.85rem;
-      text-align: right;
+      font-size: 0.875rem;
+      padding-bottom: 2px;
+      transition: color .15s;
     }
-    .refresh-btn {
+    .topnav .nav-links a:hover, .topnav .nav-links a.active { color: var(--text); border-bottom: 2px solid var(--accent); }
+    .topnav .right { display: flex; align-items: center; gap: 1rem; }
+
+    /* ---------- MAIN LAYOUT ---------- */
+    .container { max-width: 1300px; margin: 0 auto; padding: 1.5rem 2rem 3rem; }
+
+    /* ---------- DATE BAR ---------- */
+    .date-bar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .date-bar label { color: var(--muted); font-size: 0.8rem; }
+    .date-bar input[type=date] {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.35rem 0.7rem;
+      font-size: 0.85rem;
+    }
+    .date-bar button {
       background: var(--accent);
       border: none;
-      color: white;
-      padding: 0.5rem 1rem;
+      color: #fff;
+      padding: 0.4rem 1rem;
       border-radius: 6px;
       cursor: pointer;
       font-size: 0.85rem;
-      margin-top: 0.5rem;
     }
-    .refresh-btn:hover { opacity: 0.9; }
-    .refresh-btn:disabled { opacity: 0.5; cursor: wait; }
-
-    .error-banner {
-      background: #2d1618;
-      border: 1px solid var(--red);
-      color: #fca5a5;
-      padding: 1rem;
-      border-radius: 8px;
-      margin-bottom: 1.5rem;
-      font-size: 0.9rem;
+    .date-bar button:disabled { opacity: 0.5; cursor: wait; }
+    .date-range-tag {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 0.8rem;
     }
 
-    /* KPI Cards Row */
+    /* ---------- KPI ROW ---------- */
     .kpi-row {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
       gap: 1rem;
-      margin-bottom: 2rem;
+      margin-bottom: 1.5rem;
     }
     .kpi-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
     }
-    .kpi-card .label {
-      color: var(--muted);
-      font-size: 0.8rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 0.5rem;
-    }
-    .kpi-card .value {
-      font-size: 2.25rem;
+    .kpi-card .kpi-val {
+      font-size: 2rem;
       font-weight: 700;
       line-height: 1.1;
     }
-    .kpi-card .sub {
+    .kpi-card .kpi-label { color: var(--muted); font-size: 0.78rem; margin-top: 0.3rem; }
+    .kpi-card .kpi-sub {
+      font-size: 0.75rem;
       color: var(--muted);
-      font-size: 0.8rem;
-      margin-top: 0.35rem;
+      margin-top: 0.2rem;
     }
-    .value.green { color: var(--green); }
-    .value.amber { color: var(--amber); }
-    .value.accent { color: var(--accent); }
+    .green { color: var(--green); }
+    .amber { color: var(--amber); }
+    .red   { color: var(--red); }
+    .accent { color: var(--accent2); }
 
-    /* Chart Row */
+    /* ---------- ERROR BANNER ---------- */
+    .error-banner {
+      background: #2d1618; border: 1px solid var(--red); color: #fca5a5;
+      padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; font-size: 0.9rem;
+    }
+
+    /* ---------- CHART GRID ---------- */
     .chart-row {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1.5rem;
-      margin-bottom: 2rem;
+      grid-template-columns: 300px 1fr;
+      gap: 1.2rem;
+      margin-bottom: 1.2rem;
+      align-items: start;
     }
-    @media (max-width: 768px) {
-      .chart-row { grid-template-columns: 1fr; }
+    .chart-row-2 {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 1.2rem;
+      margin-bottom: 1.2rem;
+    }
+    @media (max-width: 900px) {
+      .chart-row, .chart-row-2 { grid-template-columns: 1fr; }
     }
     .chart-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
     }
     .chart-card h2 {
-      font-size: 1rem;
+      font-size: 0.875rem;
       font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
       margin-bottom: 1rem;
     }
-    .chart-wrap {
-      position: relative;
-      height: 280px;
-    }
+    .chart-wrap { position: relative; }
+    .donut-wrap { height: 220px; }
+    .line-wrap  { height: 180px; }
+    .bar-wrap   { height: 180px; }
 
-    /* Category table */
-    .cat-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
+    /* ---------- THEME BREAKDOWN TABLE ---------- */
+    .theme-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    .theme-table tr { border-bottom: 1px solid var(--border); }
+    .theme-table tr:last-child { border-bottom: none; }
+    .theme-table td { padding: 0.65rem 0.4rem; vertical-align: middle; }
+    .theme-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+      flex-shrink: 0;
     }
-    .cat-table th {
-      text-align: left;
-      color: var(--muted);
-      font-weight: 500;
-      padding: 0.5rem 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .cat-table td {
-      padding: 0.6rem 0;
-      border-bottom: 1px solid var(--border);
-    }
-    .cat-table .bar-cell { width: 50%; }
-    .bar-bg {
-      background: var(--border);
-      border-radius: 4px;
-      height: 8px;
-      overflow: hidden;
-    }
-    .bar-fill {
-      background: var(--accent);
-      height: 100%;
-      border-radius: 4px;
-      transition: width 0.4s ease;
-    }
+    .theme-name { display: flex; align-items: center; }
+    .bar-bg { background: var(--border); border-radius: 4px; height: 6px; overflow: hidden; }
+    .bar-fill { background: var(--accent); height: 100%; border-radius: 4px; }
+    .count-cell { text-align: right; color: var(--muted); min-width: 50px; }
 
+    /* ---------- FOOTER ---------- */
     .footer {
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.75rem;
-      margin-top: 2rem;
-      padding-top: 1rem;
-      border-top: 1px solid var(--border);
+      text-align: center; color: var(--muted); font-size: 0.75rem;
+      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);
     }
   </style>
 </head>
 <body>
 
-<div class="header">
-  <h1>Decagon Stats</h1>
-  <div class="meta">
-    <div id="lastUpdated">
-      {% if stats.last_updated %}
-        Last updated: {{ stats.last_updated }}
-      {% else %}
-        Not yet refreshed
-      {% endif %}
-    </div>
-    <div id="dateRange" style="margin-top:2px;">
+<!-- NAV -->
+<nav class="topnav">
+  <span class="brand">Decagon Stats</span>
+  <div class="nav-links">
+    <a href="/" class="active">Overview</a>
+    <a href="/categories">Categories</a>
+  </div>
+  <div class="right">
+    <span style="font-size:.8rem;color:var(--muted);" id="lastUpdated">
+      {% if stats.last_updated %}Updated {{ stats.last_updated[:19].replace('T',' ') }} UTC{% endif %}
+    </span>
+  </div>
+</nav>
+
+<div class="container">
+
+  {% if stats.error %}
+  <div class="error-banner">{{ stats.error }}</div>
+  {% endif %}
+
+  <!-- DATE PICKER -->
+  <div class="date-bar">
+    <label>From</label>
+    <input type="date" id="startDate" value="{{ stats.start_date or '' }}">
+    <label>To</label>
+    <input type="date" id="endDate" value="{{ stats.end_date or '' }}">
+    <button id="applyBtn" onclick="applyDateRange(this)">Apply</button>
+    <span class="date-range-tag" id="dateRangeTag">
       {% if stats.date_range %}{{ stats.date_range }}{% endif %}
-    </div>
-    <button class="refresh-btn" onclick="refreshStats(this)">Refresh Now</button>
+    </span>
   </div>
-</div>
 
-{% if stats.error %}
-<div class="error-banner" id="errorBanner">{{ stats.error }}</div>
-{% endif %}
+  <!-- KPI ROW -->
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-val accent">{{ stats.conversation_totals.total }}</div>
+      <div class="kpi-label">Total Conversations</div>
+      <div class="kpi-sub">{{ stats.conversation_totals.deflected }} deflected &middot; {{ stats.conversation_totals.escalated }} escalated</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val green">{{ stats.deflection_rate if stats.deflection_rate is not none else '—' }}%</div>
+      <div class="kpi-label">Deflection Rate</div>
+      <div class="kpi-sub">AI-resolved without escalation</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val red">
+        {% if stats.conversation_totals.total > 0 %}
+          {{ ((stats.conversation_totals.escalated / stats.conversation_totals.total) * 100) | round(1) }}%
+        {% else %}—{% endif %}
+      </div>
+      <div class="kpi-label">Escalation Rate</div>
+      <div class="kpi-sub">Handed off to a human</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-val amber">{{ stats.csat.average if stats.csat.average is not none else '—' }}</div>
+      <div class="kpi-label">CSAT Average</div>
+      <div class="kpi-sub">{{ stats.csat.total_ratings }} ratings</div>
+    </div>
+  </div>
 
-<!-- KPI Cards -->
-<div class="kpi-row">
-  <div class="kpi-card">
-    <div class="label">Deflection Rate</div>
-    <div class="value green" id="deflectionRate">
-      {{ stats.deflection_rate if stats.deflection_rate is not none else '—' }}%
+  <!-- ROW 1: Category Donut + Deflection Rate Line -->
+  <div class="chart-row">
+    <div class="chart-card">
+      <h2>Category Breakdown</h2>
+      <div class="chart-wrap donut-wrap">
+        <canvas id="categoryDonut"></canvas>
+      </div>
     </div>
-    <div class="sub">AI-resolved vs. escalated</div>
-  </div>
-  <div class="kpi-card">
-    <div class="label">CSAT Average</div>
-    <div class="value amber" id="csatAvg">
-      {{ stats.csat.average if stats.csat.average is not none else '—' }}
-    </div>
-    <div class="sub" id="csatCount">{{ stats.csat.total_ratings }} ratings</div>
-  </div>
-  <div class="kpi-card">
-    <div class="label">Total Conversations</div>
-    <div class="value accent" id="totalConvos">
-      {{ stats.conversation_totals.total }}
-    </div>
-    <div class="sub" id="convoBreakdown">
-      {{ stats.conversation_totals.deflected }} deflected &middot;
-      {{ stats.conversation_totals.escalated }} escalated
+    <div class="chart-card" style="display:flex; flex-direction:column;">
+      <h2>Deflection Rate</h2>
+      <div class="chart-wrap line-wrap" style="flex:1;">
+        <canvas id="deflectionLine"></canvas>
+      </div>
+      <h2 style="margin-top:1.2rem;">Hourly Volume Breakdown</h2>
+      <div class="chart-wrap bar-wrap" style="flex:1;">
+        <canvas id="hourlyBar"></canvas>
+      </div>
     </div>
   </div>
-  <div class="kpi-card">
-    <div class="label">Escalation Rate</div>
-    <div class="value" id="escalationRate" style="color: var(--red);">
-      {% if stats.conversation_totals.total > 0 %}
-        {{ ((stats.conversation_totals.escalated / stats.conversation_totals.total) * 100) | round(1) }}%
-      {% else %}
-        —
-      {% endif %}
-    </div>
-    <div class="sub">Conversations needing a human</div>
-  </div>
-</div>
 
-<!-- Charts -->
-<div class="chart-row">
+  <!-- ROW 2: Theme Breakdown Table -->
   <div class="chart-card">
-    <h2>Conversation Breakdown</h2>
-    <div class="chart-wrap">
-      <canvas id="convoChart"></canvas>
-    </div>
+    <h2>Theme Breakdown</h2>
+    <table class="theme-table">
+      <tbody>
+        {% set colors = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#84cc16','#06b6d4','#f97316'] %}
+        {% for cat, pct in stats.categories.items() %}
+        <tr>
+          <td style="width:40%;">
+            <span class="theme-name">
+              <span class="theme-dot" style="background:{{ colors[loop.index0 % colors|length] }}"></span>
+              {{ cat }}
+            </span>
+          </td>
+          <td style="width:45%;">
+            <div class="bar-bg">
+              <div class="bar-fill" style="width:{{ pct }}%; background:{{ colors[loop.index0 % colors|length] }};"></div>
+            </div>
+          </td>
+          <td class="count-cell">{{ pct }}%</td>
+        </tr>
+        {% endfor %}
+        {% if not stats.categories %}
+        <tr><td colspan="3" style="color:var(--muted);padding:1rem 0;">No category data yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
   </div>
-  <div class="chart-card">
-    <h2>CSAT Distribution</h2>
-    <div class="chart-wrap">
-      <canvas id="csatChart"></canvas>
-    </div>
+
+  <div class="footer">
+    Decagon Stats &middot; Auto-refresh daily 06:00 UTC &middot;
+    <a href="/api/stats" style="color:var(--accent);">JSON API</a>
   </div>
-</div>
-
-<!-- Category Table -->
-<div class="chart-card">
-  <h2>Category Breakdown</h2>
-  <table class="cat-table">
-    <thead>
-      <tr>
-        <th>Category</th>
-        <th>%</th>
-        <th class="bar-cell"></th>
-      </tr>
-    </thead>
-    <tbody id="catTableBody">
-      {% for cat, pct in stats.categories.items() %}
-      <tr>
-        <td>{{ cat }}</td>
-        <td>{{ pct }}%</td>
-        <td class="bar-cell">
-          <div class="bar-bg"><div class="bar-fill" style="width: {{ pct }}%"></div></div>
-        </td>
-      </tr>
-      {% endfor %}
-      {% if not stats.categories %}
-      <tr><td colspan="3" style="color: var(--muted); padding: 1rem 0;">No category data available</td></tr>
-      {% endif %}
-    </tbody>
-  </table>
-</div>
-
-<div class="footer">
-  Decagon Stats Dashboard &middot; Refreshes daily at 06:00 UTC &middot;
-  <a href="/api/stats" style="color: var(--accent);">JSON API</a>
 </div>
 
 <script>
-  // --- Charts ---
-  const convoData = {{ stats.conversation_totals | tojson }};
-  const csatDist  = {{ stats.csat.distribution | tojson }};
+  const categories = {{ stats.categories | tojson }};
+  const hourlyVol  = {{ stats.hourly_volume | tojson }};
+  const convoData  = {{ stats.conversation_totals | tojson }};
 
-  // Conversation donut
-  new Chart(document.getElementById('convoChart'), {
+  // ---- Palette ----
+  const palette = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#84cc16','#06b6d4','#f97316'];
+
+  // ---- Category Donut ----
+  const catLabels = Object.keys(categories);
+  const catValues = Object.values(categories);
+  new Chart(document.getElementById('categoryDonut'), {
     type: 'doughnut',
     data: {
-      labels: ['AI Deflected', 'Escalated'],
+      labels: catLabels,
       datasets: [{
-        data: [convoData.deflected, convoData.escalated],
-        backgroundColor: ['#22c55e', '#ef4444'],
+        data: catValues,
+        backgroundColor: catLabels.map((_, i) => palette[i % palette.length]),
         borderWidth: 0,
+        hoverOffset: 6,
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      cutout: '60%',
       plugins: {
-        legend: { position: 'bottom', labels: { color: '#8b8d97', padding: 16 } }
+        legend: { position: 'right', labels: { color: '#8b8d97', font: { size: 11 }, padding: 10 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}%` } }
       }
     }
   });
 
-  // CSAT bar chart
-  const csatLabels = ['1', '2', '3', '4', '5'];
-  const csatValues = csatLabels.map(k => csatDist[k] || 0);
-  new Chart(document.getElementById('csatChart'), {
-    type: 'bar',
+  // ---- Deflection Rate Line (per hour) ----
+  const hourKeys  = Object.keys(hourlyVol).sort();
+  const deflRates = hourKeys.map(h => {
+    const d = hourlyVol[h];
+    return d.total > 0 ? +((d.deflected / d.total) * 100).toFixed(1) : 0;
+  });
+  new Chart(document.getElementById('deflectionLine'), {
+    type: 'line',
     data: {
-      labels: csatLabels.map(l => l + ' star' + (l === '1' ? '' : 's')),
+      labels: hourKeys,
       datasets: [{
-        data: csatValues,
-        backgroundColor: ['#ef4444', '#f97316', '#f59e0b', '#84cc16', '#22c55e'],
-        borderRadius: 6,
+        data: deflRates,
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.15)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 3,
+        pointBackgroundColor: '#6366f1',
       }]
     },
     options: {
@@ -318,27 +354,53 @@
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#8b8d97' }, grid: { display: false } },
-        y: { ticks: { color: '#8b8d97', stepSize: 1 }, grid: { color: '#2a2d3a' } }
+        x: { ticks: { color: '#8b8d97', maxRotation: 0, font: { size: 10 } }, grid: { display: false } },
+        y: { min: 0, max: 100, ticks: { color: '#8b8d97', callback: v => v + '%' }, grid: { color: '#2a2d3a' } }
       }
     }
   });
 
-  // --- Manual refresh ---
-  async function refreshStats(btn) {
-    btn.disabled = true;
-    btn.textContent = 'Refreshing...';
-    try {
-      const resp = await fetch('/api/refresh', { method: 'POST' });
-      if (resp.ok) { location.reload(); }
-      else { alert('Refresh failed — check server logs.'); }
-    } catch (e) {
-      alert('Network error: ' + e.message);
+  // ---- Hourly Volume Bar ----
+  const hourTotals     = hourKeys.map(h => hourlyVol[h].total);
+  const hourDeflected  = hourKeys.map(h => hourlyVol[h].deflected);
+  const hourEscalated  = hourKeys.map(h => hourlyVol[h].total - hourlyVol[h].deflected);
+  new Chart(document.getElementById('hourlyBar'), {
+    type: 'bar',
+    data: {
+      labels: hourKeys,
+      datasets: [
+        { label: 'Deflected', data: hourDeflected, backgroundColor: '#6366f1', borderRadius: 3, stack: 'vol' },
+        { label: 'Escalated', data: hourEscalated, backgroundColor: '#374151', borderRadius: 3, stack: 'vol' },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b8d97', font: { size: 11 } } } },
+      scales: {
+        x: { stacked: true, ticks: { color: '#8b8d97', maxRotation: 0, font: { size: 10 } }, grid: { display: false } },
+        y: { stacked: true, ticks: { color: '#8b8d97' }, grid: { color: '#2a2d3a' } }
+      }
     }
-    btn.disabled = false;
-    btn.textContent = 'Refresh Now';
+  });
+
+  // ---- Date range apply ----
+  async function applyDateRange(btn) {
+    const start = document.getElementById('startDate').value;
+    const end   = document.getElementById('endDate').value;
+    if (!start || !end) { alert('Please select both dates.'); return; }
+    btn.disabled = true; btn.textContent = 'Loading...';
+    try {
+      const r = await fetch('/api/refresh', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ start_date: start, end_date: end })
+      });
+      if (r.ok) location.reload();
+      else alert('Refresh failed — check server logs.');
+    } catch(e) { alert('Network error: ' + e.message); }
+    btn.disabled = false; btn.textContent = 'Apply';
   }
 </script>
-
 </body>
 </html>

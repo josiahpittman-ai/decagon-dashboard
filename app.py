@@ -53,6 +53,7 @@ stats_cache = {
         "deflected": 0,
         "escalated": 0,
     },
+    "hourly_volume": {},
     "error": None,
 }
 
@@ -131,7 +132,6 @@ def compute_stats(start_date: str = None, end_date: str = None):
         start_dt = now - timedelta(days=1)
 
     if end_date:
-        # End of the selected day (23:59:59)
         end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
             hour=23, minute=59, second=59, tzinfo=timezone.utc
         )
@@ -142,28 +142,26 @@ def compute_stats(start_date: str = None, end_date: str = None):
     max_ts = end_dt.timestamp()
 
     logger.info(
-        f"Refreshing stats for {start_dt.strftime('%Y-%m-%d')} "        f"→ {end_dt.strftime('%Y-%m-%d')} UTC"
+        f"Refreshing stats for {start_dt.strftime('%Y-%m-%d')} "
+        f"→ {end_dt.strftime('%Y-%m-%d')} UTC"
     )
 
     # -- 1. Pull conversations -------------------------------------------------
     conversations = export_all_conversations(min_ts, max_ts)
 
     total = len(conversations)
-    deflected = 0      # AI handled, not escalated
-    escalated = 0      # Handed off to a human
+    deflected = 0
+    escalated = 0
     category_counts = {}
 
-    # CSAT extracted from conversation objects (no separate GET endpoint)
     csat_values = []
     csat_distribution = {}
 
-    # Per-category/subcategory tracking:
-    # key = (parent_category, subcategory_or_None)
-    # value = {"total": int, "deflected": int, "escalated": int}
     cat_detail_map = {}
-
-    # Watchtower / Auto QA error tracking
     error_items = []
+
+    # Hourly volume: key = "HH:00", value = {"total": int, "deflected": int}
+    hourly_volume = {}
 
     for convo in conversations:
         # ---- Deflection / Escalation ----
@@ -171,9 +169,23 @@ def compute_stats(start_date: str = None, end_date: str = None):
         destination = convo.get("destination", "")
         is_escalated = is_undeflected or destination == "AGENT"
 
-        if is_escalated:            escalated += 1
+        if is_escalated:
+            escalated += 1
         else:
             deflected += 1
+
+        # ---- Hourly volume ----
+        created_at_str = convo.get("created_at", "")
+        try:
+            created_dt = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+            hour_key = created_dt.strftime("%H:00")
+            if hour_key not in hourly_volume:
+                hourly_volume[hour_key] = {"total": 0, "deflected": 0}
+            hourly_volume[hour_key]["total"] += 1
+            if not is_escalated:
+                hourly_volume[hour_key]["deflected"] += 1
+        except (ValueError, AttributeError):
+            pass
 
         # ---- Categories with subcategories (from tags array) ----
         tags = convo.get("tags", [])
@@ -342,6 +354,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
             "deflected": deflected,
             "escalated": escalated,
         },
+        "hourly_volume": dict(sorted(hourly_volume.items())),
         "error": None,
     }
     logger.info(f"Stats refreshed: {json.dumps(stats_cache, indent=2)}")
