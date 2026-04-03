@@ -164,6 +164,50 @@
     </table>
   </div>
 
+  <div class="header-info" style="margin-top: 3rem;">
+    <h2>Category Performance History</h2>
+    <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 1rem;">
+      <p>Tracks "Insight" tag counts and deflection rates per day.</p>
+      <input type="text" id="catSearch" placeholder="Search categories..." style="background:var(--card); border:1px solid var(--border); color:var(--text); padding:0.4rem 0.8rem; border-radius:4px; font-size:0.8rem; width:250px;">
+    </div>
+  </div>
+
+  <div class="table-wrap" style="max-height: 600px; overflow-y: auto;">
+    <table class="history-table" id="categoryHistoryTable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Category</th>
+          <th>Subcategory</th>
+          <th class="num-col">Total</th>
+          <th class="num-col">Deflected</th>
+          <th class="num-col">Deflection %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in category_history %}
+        <tr>
+          <td style="color:var(--muted); font-size:0.8rem;">{{ row.date }}</td>
+          <td class="bold-cell">{{ row.category }}</td>
+          <td style="opacity:0.8;">{{ row.subcategory if row.subcategory else '—' }}</td>
+          <td class="num-cell">{{ row.total_conversations }}</td>
+          <td class="num-cell">{{ row.deflected }}</td>
+          <td class="num-cell">
+            {% set c_rate = (row.deflected / row.total_conversations * 100) | round(1) if row.total_conversations > 0 else 0 %}
+            <span class="heat-badge" style="{{ 'background:rgba(34,197,94,0.2);color:#bbf7d0' if c_rate >= 60 else ('background:rgba(245,158,11,0.2);color:#fde68a' if c_rate >= 40 else 'background:rgba(239,68,68,0.2);color:#fecaca') }}">
+              {{ c_rate }}%
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" style="text-align:center; padding: 2rem; color: var(--muted);">No category history recorded yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
   <div class="footer">
     Stored in persistent local storage. &middot;
     <a href="/api/stats" style="color:var(--accent);">JSON API</a>
@@ -225,6 +269,20 @@
           }
         }
       }
+    });
+  }
+
+  // Category Search Filtering
+  const catSearch = document.getElementById('catSearch');
+  const catTable = document.getElementById('categoryHistoryTable');
+  if (catSearch && catTable) {
+    catSearch.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase();
+      const rows = catTable.querySelectorAll('tbody tr');
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(term) ? '' : 'none';
+      });
     });
   }
 </script>

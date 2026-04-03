@@ -528,14 +528,23 @@ def categories_page():
 @app.route("/history")
 def history_page():
     history_data = []
+    category_history = []
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
+            # Main daily stats
             rows = conn.execute("SELECT * FROM daily_stats ORDER BY date DESC").fetchall()
             history_data = [dict(row) for row in rows]
+            
+            # Per-category history
+            cat_rows = conn.execute("""
+                SELECT * FROM daily_category_stats 
+                ORDER BY date DESC, total_conversations DESC
+            """).fetchall()
+            category_history = [dict(row) for row in cat_rows]
     except Exception as e:
         logger.error(f"Failed to fetch history: {e}")
-    return render_template("history.html", stats=stats_cache, history=history_data)
+    return render_template("history.html", stats=stats_cache, history=history_data, category_history=category_history)
 
 
 @app.route("/api/stats")
