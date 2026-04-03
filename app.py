@@ -41,6 +41,7 @@ stats_cache = {
     "date_range": None,
     "deflection_rate": None,
     "categories": {},
+    "day_labels": [],
     "category_detail": [],       # Per-category/subcategory breakdown
     "error_analysis": [],        # Watchtower / Auto QA issues
     "csat": {
@@ -163,6 +164,9 @@ def compute_stats(start_date: str = None, end_date: str = None):
     # Hourly volume: key = "HH:00", value = {"total": int, "deflected": int}
     hourly_volume = {}
 
+    # Daily per-category: daily_cat_map[day_str][(parent, sub)] = {total, deflected}
+    daily_cat_map = {}
+
     for convo in conversations:
         # ---- Deflection / Escalation ----
         is_undeflected = convo.get("undeflected", False)
@@ -239,6 +243,22 @@ def compute_stats(start_date: str = None, end_date: str = None):
             cat_detail_map[key_sub]["total"] += 1
             cat_detail_map[key_sub]["deflected"] += 0 if is_escalated else 1
             cat_detail_map[key_sub]["escalated"] += 1 if is_escalated else 0
+
+        # Daily per-category tracking
+        created_at_str2 = convo.get("created_at", "")
+        try:
+            created_dt2 = datetime.fromisoformat(created_at_str2.replace("Z", "+00:00"))
+            day_str = created_dt2.strftime("%m/%d")
+            if day_str not in daily_cat_map:
+                daily_cat_map[day_str] = {}
+            for ckey in [(parent_cat, None)] + [(parent_cat, s) for s in subcategories]:
+                if ckey not in daily_cat_map[day_str]:
+                    daily_cat_map[day_str][ckey] = {"total": 0, "deflected": 0}
+                daily_cat_map[day_str][ckey]["total"] += 1
+                if not is_escalated:
+                    daily_cat_map[day_str][ckey]["deflected"] += 1
+        except (ValueError, AttributeError):
+            pass
 
         # ---- CSAT (embedded in conversation object) ----
         csat_score = convo.get("csat")
@@ -336,6 +356,24 @@ def compute_stats(start_date: str = None, end_date: str = None):
     # CSAT average
     csat_avg = round(sum(csat_values) / len(csat_values), 2) if csat_values else None
 
+    # Build daily_category_stats: sorted day labels + per-category daily rates
+    day_labels = sorted(daily_cat_map.keys())
+    # Attach daily deflection rates to each category_detail row
+    for row in category_detail:
+        ckey = (row["category"], row["subcategory"])
+        day_rates = []
+        for d in day_labels:
+            ddata = daily_cat_map.get(d, {}).get(ckey)
+            if ddata and ddata["total"] > 0:
+                day_rates.append(round((ddata["deflected"] / ddata["total"]) * 100, 1))
+            else:
+                day_rates.append(None)
+        row["day_rates"] = day_rates
+        row["day_totals"] = [
+            (daily_cat_map.get(d, {}).get(ckey) or {}).get("total", 0)
+            for d in day_labels
+        ]
+
     # -- 2. Update cache -------------------------------------------------------
     stats_cache = {
         "last_updated": now.isoformat(),
@@ -344,6 +382,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
         "end_date": end_dt.strftime("%Y-%m-%d"),
         "deflection_rate": deflection_rate,
         "categories": category_pcts,
+        "day_labels": day_labels,
         "category_detail": category_detail,
         "error_analysis": error_items,
         "csat": {

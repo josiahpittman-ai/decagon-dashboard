@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Category Performance · Decagon Stats</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e4e4e7;
+      --muted: #8b8d97;
+      --accent: #6366f1;
+      --green: #22c55e;
+      --red: #ef4444;
+      --row-hover: rgba(255,255,255,0.03);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 13px;
+    }
+
+    /* NAV */
+    .topnav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 1.5rem; height: 52px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+    .topnav .brand { font-weight: 700; font-size: 1rem; color: var(--accent); }
+    .topnav .nav-links { display: flex; gap: 1.5rem; }
+    .topnav .nav-links a {
+      text-decoration: none; color: var(--muted); font-size: 0.85rem; padding-bottom: 2px;
+    }
+    .topnav .nav-links a:hover, .topnav .nav-links a.active {
+      color: var(--text); border-bottom: 2px solid var(--accent);
+    }
+
+    /* CONTAINER */
+    .container { padding: 1.2rem 1.5rem 3rem; max-width: 1600px; margin: 0 auto; }
+
+    /* DATE BAR */
+    .date-bar {
+      display: flex; align-items: center; gap: 0.8rem;
+      margin-bottom: 1.2rem; flex-wrap: wrap;
+    }
+    .date-bar label { color: var(--muted); font-size: 0.78rem; }
+    .date-bar input[type=date] {
+      background: var(--card); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 0.3rem 0.6rem; font-size: 0.8rem;
+    }
+    .date-bar button {
+      background: var(--accent); border: none; color: #fff;
+      padding: 0.35rem 0.9rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+    }
+    .date-bar button:disabled { opacity: 0.5; cursor: wait; }
+
+    /* TABLE WRAPPER */
+    .table-wrap { overflow-x: auto; }
+
+    /* HEATMAP TABLE */
+    .heatmap {
+      width: 100%;
+      border-collapse: collapse;
+      white-space: nowrap;
+    }
+    .heatmap th {
+      text-align: center;
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.75rem;
+      padding: 0.5rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: var(--bg); z-index: 2;
+    }
+    .heatmap th.cat-th {
+      text-align: left;
+      min-width: 220px;
+      position: sticky; left: 0; background: var(--bg); z-index: 3;
+    }
+    .heatmap th.total-th { min-width: 70px; text-align: right; }
+    .heatmap th.spark-th { min-width: 80px; }
+
+    .heatmap td {
+      padding: 0.4rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    /* Category name cell */
+    .heatmap td.cat-cell {
+      position: sticky; left: 0; background: var(--bg); z-index: 1;
+      font-size: 0.82rem; max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+    }
+    .heatmap tr:hover td { background: var(--row-hover); }
+    .heatmap tr:hover td.cat-cell { background: #1c1f2b; }
+
+    /* Parent row */
+    .row-parent td.cat-cell {
+      font-weight: 600; color: var(--text);
+    }
+    .row-parent { background: #13151e; }
+    .row-parent td { background: #13151e !important; }
+    .row-parent:hover td { background: #1c1f2b !important; }
+
+    /* Sub row */
+    .row-sub td.cat-cell {
+      color: var(--muted); padding-left: 1.8rem;
+    }
+
+    /* Total cell */
+    .total-cell { text-align: right; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+
+    /* Heat cell */
+    .heat-cell {
+      text-align: center;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      min-width: 56px;
+      font-variant-numeric: tabular-nums;
+      padding: 0.28rem 0.5rem;
+    }
+    .heat-null { color: var(--muted); background: transparent; font-weight: 400; }
+
+    /* Sparkline cell */
+    .spark-cell { text-align: center; padding: 0 0.4rem; }
+    .spark-cell canvas { display: block; margin: auto; }
+
+    /* TOGGLE ARROW */
+    .toggle-btn {
+      cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem;
+      background: none; border: none; color: inherit; font: inherit; padding: 0;
+    }
+    .toggle-btn .arrow { font-size: 0.65rem; transition: transform 0.15s; display: inline-block; }
+    .toggle-btn.open .arrow { transform: rotate(90deg); }
+
+    /* Legend */
+    .legend {
+      display: flex; align-items: center; gap: 1.2rem;
+      margin-bottom: 0.8rem; font-size: 0.75rem; color: var(--muted);
+    }
+    .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+    .legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+
+    .footer {
+      text-align: center; color: var(--muted); font-size: 0.75rem;
+      margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">Decagon Stats</span>
+  <div class="nav-links">
+    <a href="/">Overview</a>
+    <a href="/categories" class="active">Categories</a>
+  </div>
+  <span style="font-size:.78rem;color:var(--muted);">
+    {% if stats.last_updated %}Updated {{ stats.last_updated[:19].replace('T',' ') }} UTC{% endif %}
+  </span>
+</nav>
+
+<div class="container">
+  <div class="date-bar">
+    <label>From</label>
+    <input type="date" id="startDate" value="{{ stats.start_date or '' }}">
+    <label>To</label>
+    <input type="date" id="endDate" value="{{ stats.end_date or '' }}">
+    <button id="applyBtn" onclick="applyDateRange(this)">Apply</button>
+    <span style="margin-left:auto;color:var(--muted);font-size:0.78rem;">
+      {% if stats.date_range %}{{ stats.date_range }}{% endif %}
+    </span>
+  </div>
+
+  <div class="legend">
+    <span>Deflection rate:</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:rgba(34,197,94,0.55)"></span> ≥ 80%</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:rgba(34,197,94,0.25)"></span> 60–79%</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:rgba(245,158,11,0.25)"></span> 40–59%</span>
+    <span class="legend-item"><span class="legend-swatch" style="background:rgba(239,68,68,0.30)"></span> &lt; 40%</span>
+  </div>
+
+  <div class="table-wrap">
+    <table class="heatmap" id="heatmapTable">
+      <thead>
+        <tr>
+          <th class="cat-th">Category</th>
+          <th class="total-th">Total</th>
+          {% for d in stats.day_labels %}
+          <th>{{ d }}</th>
+          {% endfor %}
+          <th class="spark-th">Trend</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set ns = namespace(cur_parent=None) %}
+        {% for row in stats.category_detail %}
+          {% if row.subcategory is none %}
+            {# PARENT ROW #}
+            {% set ns.cur_parent = row.category %}
+            <tr class="row-parent" data-parent="{{ row.category | e }}">
+              <td class="cat-cell">
+                <button class="toggle-btn open" onclick="toggleSubs('{{ row.category | e | replace("'", "\\'") }}', this)">
+                  <span class="arrow">▶</span>
+                  {{ row.category }}
+                </button>
+              </td>
+              <td class="total-cell">{{ row.total }}</td>
+              {% for r in row.day_rates %}
+                <td>
+                  {% if r is not none %}
+                    <div class="heat-cell" style="{{ 'background:rgba(34,197,94,0.55);color:#d1fae5' if r >= 80 else ('background:rgba(34,197,94,0.25);color:#bbf7d0' if r >= 60 else ('background:rgba(245,158,11,0.25);color:#fde68a' if r >= 40 else 'background:rgba(239,68,68,0.30);color:#fecaca')) }}">{{ r }}</div>
+                  {% else %}
+                    <div class="heat-cell heat-null">—</div>
+                  {% endif %}
+                </td>
+              {% endfor %}
+              <td class="spark-cell">
+                <canvas class="spark" width="80" height="30"
+                  data-rates="{{ row.day_rates | tojson }}"></canvas>
+              </td>
+            </tr>
+          {% else %}
+            {# SUB ROW #}
+            <tr class="row-sub" data-sub-of="{{ row.category | e }}">
+              <td class="cat-cell">{{ row.subcategory }}</td>
+              <td class="total-cell">{{ row.total }}</td>
+              {% for r in row.day_rates %}
+                <td>
+                  {% if r is not none %}
+                    <div class="heat-cell" style="{{ 'background:rgba(34,197,94,0.55);color:#d1fae5' if r >= 80 else ('background:rgba(34,197,94,0.25);color:#bbf7d0' if r >= 60 else ('background:rgba(245,158,11,0.25);color:#fde68a' if r >= 40 else 'background:rgba(239,68,68,0.30);color:#fecaca')) }}">{{ r }}</div>
+                  {% else %}
+                    <div class="heat-cell heat-null">—</div>
+                  {% endif %}
+                </td>
+              {% endfor %}
+              <td class="spark-cell">
+                <canvas class="spark" width="80" height="30"
+                  data-rates="{{ row.day_rates | tojson }}"></canvas>
+              </td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer" style="margin-top:1.5rem;">
+    Insight Tags &nbsp;·&nbsp;
+    <a href="/api/stats" style="color:var(--accent);">JSON API</a>
+  </div>
+</div>
+
+<script>
+// ---- Toggle subcategory rows ----
+function toggleSubs(parent, btn) {
+  btn.classList.toggle('open');
+  const rows = document.querySelectorAll(`tr[data-sub-of="${CSS.escape(parent)}"]`);
+  rows.forEach(r => r.style.display = r.style.display === 'none' ? '' : 'none');
+}
+
+// ---- Sparkline mini charts ----
+document.querySelectorAll('canvas.spark').forEach(canvas => {
+  const rates = JSON.parse(canvas.dataset.rates);
+  const valid = rates.filter(r => r !== null);
+  if (valid.length < 2) return;
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: rates.map((_, i) => i),
+      datasets: [{
+        data: rates,
+        borderColor: '#6366f1',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        tension: 0.4,
+        spanGaps: true,
+      }]
+    },
+    options: {
+      responsive: false,
+      animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: { display: false },
+        y: { display: false, min: 0, max: 100 }
+      }
+    }
+  });
+});
+
+// ---- Date range apply ----
+async function applyDateRange(btn) {
+  const start = document.getElementById('startDate').value;
+  const end   = document.getElementById('endDate').value;
+  if (!start || !end) { alert('Please select both dates.'); return; }
+  btn.disabled = true; btn.textContent = 'Loading...';
+  try {
+    const r = await fetch('/api/refresh', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ start_date: start, end_date: end })
+    });
+    if (r.ok) location.reload();
+    else alert('Refresh failed — check server logs.');
+  } catch(e) { alert('Network error: ' + e.message); }
+  btn.disabled = false; btn.textContent = 'Apply';
+}
+</script>
+</body>
+</html>
