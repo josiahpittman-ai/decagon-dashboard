@@ -528,23 +528,36 @@ def categories_page():
 @app.route("/history")
 def history_page():
     history_data = []
-    category_history = []
     try:
         with sqlite3.connect(DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
-            # Main daily stats
+            # 1. Main daily stats
             rows = conn.execute("SELECT * FROM daily_stats ORDER BY date DESC").fetchall()
-            history_data = [dict(row) for row in rows]
+            daily_rows = [dict(row) for row in rows]
             
-            # Per-category history
+            # 2. Per-category history, grouped by date
             cat_rows = conn.execute("""
-                SELECT * FROM daily_category_stats 
+                SELECT date, category, subcategory, total_conversations, deflected
+                FROM daily_category_stats 
                 ORDER BY date DESC, total_conversations DESC
             """).fetchall()
-            category_history = [dict(row) for row in cat_rows]
+            
+            # Organize categories by date
+            cat_by_date = {}
+            for cr in cat_rows:
+                d = cr["date"]
+                if d not in cat_by_date:
+                    cat_by_date[d] = []
+                cat_by_date[d].append(dict(cr))
+            
+            # 3. Merge category data into main history rows
+            for row in daily_rows:
+                row["categories"] = cat_by_date.get(row["date"], [])
+            
+            history_data = daily_rows
     except Exception as e:
         logger.error(f"Failed to fetch history: {e}")
-    return render_template("history.html", stats=stats_cache, history=history_data, category_history=category_history)
+    return render_template("history.html", stats=stats_cache, history=history_data)
 
 
 @app.route("/api/stats")

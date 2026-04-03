@@ -4,7 +4,6 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Daily History · Decagon Stats</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <style>
     :root {
       --bg: #0f1117;
@@ -45,22 +44,13 @@
     /* CONTAINER */
     .container { padding: 1.2rem 1.5rem 3rem; max-width: 1600px; margin: 0 auto; }
     
-    .header-info { margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--muted); }
+    .header-info { margin-bottom: 1.5rem; font-size: 0.85rem; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
 
-    /* CHARTS */
-    .chart-card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;
-    }
-    .chart-card h2 { font-size: 0.95rem; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
-    .chart-wrap { position: relative; width: 100%; height: 220px; }
-
-    /* HEATMAP TABLE */
+    /* TABLE */
     .table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: 8px;}
     .history-table {
       width: 100%;
       border-collapse: collapse;
-      white-space: nowrap;
     }
     .history-table th {
       text-align: left;
@@ -75,7 +65,7 @@
     .history-table td {
       padding: 0.75rem 1rem;
       border-bottom: 1px solid var(--border);
-      vertical-align: middle;
+      vertical-align: top;
     }
     .history-table tr:last-child td { border-bottom: none; }
     .history-table tr:hover td { background: var(--row-hover); }
@@ -85,6 +75,25 @@
     
     .heat-badge {
       display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; font-size: 0.75rem; min-width: 48px; text-align: center;
+    }
+
+    /* CATEGORY PILLS */
+    .cat-breakdown {
+      display: flex; flex-wrap: wrap; gap: 0.4rem; max-width: 500px;
+    }
+    .cat-pill {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      white-space: nowrap;
+      color: var(--muted);
+    }
+    .cat-pill b { color: var(--accent); margin-left: 3px; }
+
+    .search-box {
+      background: var(--card); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 0.8rem; border-radius: 4px; font-size: 0.8rem; width: 250px;
     }
     
     .footer {
@@ -109,99 +118,51 @@
 <div class="container">
   
   <div class="header-info">
-    Metrics are aggregated and permanently stored day by day (EST).
-  </div>
-
-  <div class="chart-card">
-    <h2>Historical Deflection Rate Trend</h2>
-    <div class="chart-wrap">
-      <canvas id="trendLine"></canvas>
-    </div>
+    <span>Metrics aggregated day by day (EST).</span>
+    <input type="text" id="rowSearch" class="search-box" placeholder="Filter by date or category...">
   </div>
 
   <div class="table-wrap">
-    <table class="history-table">
+    <table class="history-table" id="historyTable">
       <thead>
         <tr>
           <th>Date (EST)</th>
-          <th class="num-col">Total Conversations</th>
+          <th class="num-col">Total</th>
           <th class="num-col">Deflected</th>
-          <th class="num-col">Escalated</th>
-          <th class="num-col">Deflection Rate</th>
-          <th class="num-col">Avg CSAT</th>
-          <th class="num-col">Last Updated (UTC)</th>
+          <th class="num-col">Rate</th>
+          <th class="num-col">CSAT</th>
+          <th>Category Breakdown (Insight Tags)</th>
         </tr>
       </thead>
       <tbody>
         {% for row in history %}
-        <tr>
+        <tr class="history-row">
           <td class="bold-cell">{{ row.date }}</td>
           <td class="num-cell">{{ row.total_conversations }}</td>
           <td class="num-cell">{{ row.deflected }}</td>
-          <td class="num-cell">{{ row.escalated }}</td>
           <td class="num-cell">
             <span class="heat-badge" style="{{ 'background:rgba(34,197,94,0.25);color:#bbf7d0' if row.deflection_rate >= 60 else ('background:rgba(245,158,11,0.25);color:#fde68a' if row.deflection_rate >= 40 else 'background:rgba(239,68,68,0.30);color:#fecaca') }}">
               {{ row.deflection_rate }}%
             </span>
           </td>
           <td class="num-cell">
-            {% if row.csat_average %}
-              {{ row.csat_average }}
-            {% else %}
-              <span style="opacity:0.5">—</span>
-            {% endif %}
+            {{ row.csat_average if row.csat_average else '—' }}
           </td>
-          <td class="num-cell" style="font-size:0.7rem; opacity:0.7;">
-            {{ row.updated_at[:19].replace('T', ' ') if row.updated_at else '—' }}
-          </td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="7" style="text-align:center; padding: 2rem; color: var(--muted);">No historical data stored yet. It will populate as daily loads occur.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="header-info" style="margin-top: 3rem;">
-    <h2>Category Performance History</h2>
-    <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 1rem;">
-      <p>Tracks "Insight" tag counts and deflection rates per day.</p>
-      <input type="text" id="catSearch" placeholder="Search categories..." style="background:var(--card); border:1px solid var(--border); color:var(--text); padding:0.4rem 0.8rem; border-radius:4px; font-size:0.8rem; width:250px;">
-    </div>
-  </div>
-
-  <div class="table-wrap" style="max-height: 600px; overflow-y: auto;">
-    <table class="history-table" id="categoryHistoryTable">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Category</th>
-          <th>Subcategory</th>
-          <th class="num-col">Total</th>
-          <th class="num-col">Deflected</th>
-          <th class="num-col">Deflection %</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in category_history %}
-        <tr>
-          <td style="color:var(--muted); font-size:0.8rem;">{{ row.date }}</td>
-          <td class="bold-cell">{{ row.category }}</td>
-          <td style="opacity:0.8;">{{ row.subcategory if row.subcategory else '—' }}</td>
-          <td class="num-cell">{{ row.total_conversations }}</td>
-          <td class="num-cell">{{ row.deflected }}</td>
-          <td class="num-cell">
-            {% set c_rate = (row.deflected / row.total_conversations * 100) | round(1) if row.total_conversations > 0 else 0 %}
-            <span class="heat-badge" style="{{ 'background:rgba(34,197,94,0.2);color:#bbf7d0' if c_rate >= 60 else ('background:rgba(245,158,11,0.2);color:#fde68a' if c_rate >= 40 else 'background:rgba(239,68,68,0.2);color:#fecaca') }}">
-              {{ c_rate }}%
-            </span>
+          <td>
+            <div class="cat-breakdown">
+              {% for cat in row.categories %}
+                {% if not cat.subcategory %}
+                  <div class="cat-pill">
+                    {{ cat.category }}: <b>{{ cat.total_conversations }}</b>
+                  </div>
+                {% endif %}
+              {% endfor %}
+            </div>
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="6" style="text-align:center; padding: 2rem; color: var(--muted);">No category history recorded yet.</td>
+          <td colspan="6" style="text-align:center; padding: 2rem; color: var(--muted);">No historical data stored yet.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -215,71 +176,14 @@
 </div>
 
 <script>
-  // Setup Chart
-  const historyData = {{ history | tojson }};
+  // Simple table filter
+  const searchInput = document.getElementById('rowSearch');
+  const tableRows = document.querySelectorAll('.history-row');
   
-  // Sort ascending for chart (chronological left-to-right)
-  const chartData = [...historyData].sort((a,b) => a.date.localeCompare(b.date));
-  
-  if (chartData.length > 0) {
-    const dates = chartData.map(d => d.date);
-    const rates = chartData.map(d => d.deflection_rate);
-    const totals = chartData.map(d => d.total_conversations);
-
-    new Chart(document.getElementById('trendLine'), {
-      type: 'line',
-      data: {
-        labels: dates,
-        datasets: [{
-          label: 'Deflection Rate',
-          data: rates,
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.15)',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: '#6366f1',
-          yAxisID: 'y'
-        },
-        {
-          label: 'Total Volume',
-          data: totals,
-          type: 'bar',
-          backgroundColor: 'rgba(255, 255, 255, 0.05)',
-          yAxisID: 'y1'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { 
-          legend: { labels: { color: '#8b8d97' } }
-        },
-        scales: {
-          x: { ticks: { color: '#8b8d97' }, grid: { display: false } },
-          y: { 
-            type: 'linear', display: true, position: 'left', min: 0, max: 100, 
-            ticks: { color: '#8b8d97', callback: v => v + '%' }, 
-            grid: { color: '#2a2d3a' } 
-          },
-          y1: { 
-            type: 'linear', display: true, position: 'right', min: 0,
-            ticks: { color: 'rgba(255,255,255,0.3)' },
-            grid: { drawOnChartArea: false }
-          }
-        }
-      }
-    });
-  }
-
-  // Category Search Filtering
-  const catSearch = document.getElementById('catSearch');
-  const catTable = document.getElementById('categoryHistoryTable');
-  if (catSearch && catTable) {
-    catSearch.addEventListener('input', (e) => {
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
       const term = e.target.value.toLowerCase();
-      const rows = catTable.querySelectorAll('tbody tr');
-      rows.forEach(row => {
+      tableRows.forEach(row => {
         const text = row.textContent.toLowerCase();
         row.style.display = text.includes(term) ? '' : 'none';
       });
