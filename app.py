@@ -26,6 +26,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+eastern = pytz.timezone("US/Eastern")
 DECAGON_API_KEY = os.environ.get("DECAGON_API_KEY", "")
 DECAGON_API_BASE = os.environ.get("DECAGON_API_BASE", "https://api.decagon.ai")
 PORT = int(os.environ.get("PORT", 5000))
@@ -160,7 +161,6 @@ def compute_stats(start_date: str = None, end_date: str = None):
         return
 
     # We'll calculate days based on US/Eastern time
-    eastern = pytz.timezone("US/Eastern")
     now_utc = datetime.now(timezone.utc)
     now_est = now_utc.astimezone(eastern)
 
@@ -576,10 +576,10 @@ def api_refresh():
     return jsonify({"status": "ok", "stats": stats_cache})
 
 # ---------------------------------------------------------------------------
-# Scheduler: refresh daily at 6 AM UTC
+# Scheduler: refresh daily at Midnight EST
 # ---------------------------------------------------------------------------
-scheduler = BackgroundScheduler()
-scheduler.add_job(compute_stats, "cron", hour=6, minute=0)
+scheduler = BackgroundScheduler(timezone=eastern)
+scheduler.add_job(compute_stats, "cron", hour=0, minute=0)
 scheduler.start()
 
 
