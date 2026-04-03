@@ -162,7 +162,8 @@ def compute_stats(start_date: str = None, end_date: str = None):
     if start_date:
         start_dt_est = eastern.localize(datetime.strptime(start_date, "%Y-%m-%d"))
     else:
-        start_dt_est = (now_est - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Default to last 7 days as requested
+        start_dt_est = (now_est - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
 
     if end_date:
         end_dt_est = eastern.localize(datetime.strptime(end_date, "%Y-%m-%d")).replace(
