@@ -49,6 +49,17 @@ def init_db():
                 updated_at TIMESTAMP
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS daily_category_stats (
+                date TEXT,
+                category TEXT,
+                subcategory TEXT,
+                total_conversations INTEGER,
+                deflected INTEGER,
+                escalated INTEGER,
+                PRIMARY KEY (date, category, subcategory)
+            )
+        ''')
         conn.commit()
 
 init_db()
@@ -299,7 +310,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
         try:
             created_dt_utc2 = datetime.fromisoformat(created_at_str2.replace("Z", "+00:00"))
             created_dt_est2 = created_dt_utc2.astimezone(eastern)
-            day_str = created_dt_est2.strftime("%m/%d")
+            day_str = created_dt_est2.strftime("%Y-%m-%d")
             if day_str not in daily_cat_map:
                 daily_cat_map[day_str] = {}
             for ckey in [(parent_cat, None)] + [(parent_cat, s) for s in subcategories]:
@@ -435,17 +446,34 @@ def compute_stats(start_date: str = None, end_date: str = None):
                         csat_average=excluded.csat_average,
                         updated_at=excluded.updated_at
                 ''', (day, day_tot, day_defl, day_esc, day_rate, day_csat_avg, now_utc.isoformat()))
+            
+            # Upsert daily category stats
+            for c_date, cat_data in daily_cat_map.items():
+                for (cat_parent, cat_sub), stats in cat_data.items():
+                    c_tot = stats["total"]
+                    c_def = stats["deflected"]
+                    c_esc = c_tot - c_def
+                    cat_sub_str = cat_sub if cat_sub else ""
+                    conn.execute('''
+                        INSERT INTO daily_category_stats (date, category, subcategory, total_conversations, deflected, escalated)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(date, category, subcategory) DO UPDATE SET
+                            total_conversations=excluded.total_conversations,
+                            deflected=excluded.deflected,
+                            escalated=excluded.escalated
+                    ''', (c_date, cat_parent, cat_sub_str, c_tot, c_def, c_esc))
             conn.commit()
     except Exception as e:
         logger.error(f"Failed to upsert daily stats to SQLite: {e}")
 
     # Build daily_category_stats: sorted day labels + per-category daily rates
-    day_labels = sorted(daily_cat_map.keys())
+    day_labels_db = sorted(daily_cat_map.keys())
+    day_labels = [datetime.strptime(d, "%Y-%m-%d").strftime("%m/%d") for d in day_labels_db]
     # Attach daily deflection rates to each category_detail row
     for row in category_detail:
         ckey = (row["category"], row["subcategory"])
         day_rates = []
-        for d in day_labels:
+        for d in day_labels_db:
             ddata = daily_cat_map.get(d, {}).get(ckey)
             if ddata and ddata["total"] > 0:
                 day_rates.append(round((ddata["deflected"] / ddata["total"]) * 100, 1))
@@ -454,7 +482,7 @@ def compute_stats(start_date: str = None, end_date: str = None):
         row["day_rates"] = day_rates
         row["day_totals"] = [
             (daily_cat_map.get(d, {}).get(ckey) or {}).get("total", 0)
-            for d in day_labels
+            for d in day_labels_db
         ]
 
     # -- 2. Update cache -------------------------------------------------------
