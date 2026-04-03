@@ -187,33 +187,35 @@ def compute_stats(start_date: str = None, end_date: str = None):
         except (ValueError, AttributeError):
             pass
 
-        # ---- Categories with subcategories (from tags array) ----
-        tags = convo.get("tags", [])
+        # ---- Categories from Insight tags (all_tags hierarchy) ----
+        # all_tags is a dict of {hierarchy_id: {name: str, tags: [...]}}
+        # We prefer the hierarchy whose name contains "insight" (case-insensitive).
         parent_cat = None
         subcategories = []
 
-        if tags:
-            for tag in tags:
+        all_tags = convo.get("all_tags", {}) or {}
+
+        # Find the Insights hierarchy first; fall back to first available.
+        insight_hierarchy = None
+        fallback_hierarchy = None
+        for hierarchy_id, hierarchy in all_tags.items():
+            h_name = (hierarchy.get("name") or "").lower()
+            if "insight" in h_name:
+                insight_hierarchy = hierarchy
+                break
+            if fallback_hierarchy is None:
+                fallback_hierarchy = hierarchy
+
+        chosen_hierarchy = insight_hierarchy or fallback_hierarchy
+
+        if chosen_hierarchy:
+            for tag in (chosen_hierarchy.get("tags") or []):
                 level = tag.get("level", 0)
                 name = tag.get("name", "Uncategorized")
                 if level == 0:
                     parent_cat = name
                 else:
                     subcategories.append(name)
-        else:
-            # Fallback: check all_tags for any hierarchy
-            all_tags = convo.get("all_tags", {})
-            for hierarchy_id, hierarchy in all_tags.items():
-                hierarchy_tags = hierarchy.get("tags", [])
-                for tag in hierarchy_tags:
-                    level = tag.get("level", 0)
-                    name = tag.get("name", "Uncategorized")
-                    if level == 0:
-                        parent_cat = name
-                    else:
-                        subcategories.append(name)
-                if parent_cat:
-                    break
 
         if not parent_cat:
             parent_cat = "Uncategorized"
