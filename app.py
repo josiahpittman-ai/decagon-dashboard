@@ -175,15 +175,25 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
                     csat_values.append(cv)
                     csat_distribution[str(cv)] += 1
 
-            # Insights
+            # Categories — prefer top-level `tags` array (Insights), fall back to all_tags
             parent_cat, subcats = "Uncategorized", []
-            all_tags = convo.get("all_tags", {}) or {}
-            for h in all_tags.values():
-                if "insight" in (h.get("name") or "").lower():
-                    for t in (h.get("tags") or []):
-                        if t.get("level") == 0: parent_cat = t.get("name")
-                        else: subcats.append(t.get("name"))
-                    break
+            tags_arr = convo.get("tags") or []
+            if tags_arr:
+                for t in tags_arr:
+                    if t.get("level") == 0:
+                        parent_cat = t.get("name", "Uncategorized")
+                    elif t.get("level", 0) >= 1:
+                        subcats.append(t.get("name"))
+            else:
+                all_tags = convo.get("all_tags", {}) or {}
+                for h in all_tags.values():
+                    if "insight" in (h.get("label") or "").lower():
+                        for t in (h.get("tags") or []):
+                            if t.get("level") == 0:
+                                parent_cat = t.get("name", "Uncategorized")
+                            else:
+                                subcats.append(t.get("name"))
+                        break
             category_counts[parent_cat] += 1
             for ckey in [(parent_cat, None)] + [(parent_cat, s) for s in subcats]:
                 cat_detail_map[ckey]["total"] += 1
@@ -320,27 +330,6 @@ def task_status(task_id):
         r = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
         if not r: return jsonify({"status": "not_found"}), 404
         return jsonify({"status": r[0]})
-
-@app.route("/api/debug_tags")
-def debug_tags():
-    """Fetch 3 conversations and return their tag-related fields."""
-    from datetime import datetime, timedelta, timezone
-    now_utc = datetime.now(timezone.utc)
-    now_est = now_utc.astimezone(eastern)
-    start_dt = (now_est - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-    min_ts, max_ts = start_dt.timestamp(), now_est.timestamp()
-    samples = []
-    for i, convo in enumerate(stream_conversations(min_ts, max_ts)):
-        if i >= 3:
-            break
-        samples.append({
-            "id": convo.get("id"),
-            "tags": convo.get("tags"),
-            "all_tags": convo.get("all_tags"),
-            "tag_keys": [k for k in convo.keys() if "tag" in k.lower()],
-            "all_keys": list(convo.keys()),
-        })
-    return jsonify(samples)
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
