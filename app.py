@@ -321,6 +321,27 @@ def task_status(task_id):
         if not r: return jsonify({"status": "not_found"}), 404
         return jsonify({"status": r[0]})
 
+@app.route("/api/debug_tags")
+def debug_tags():
+    """Fetch 3 conversations and return their tag-related fields."""
+    from datetime import datetime, timedelta, timezone
+    now_utc = datetime.now(timezone.utc)
+    now_est = now_utc.astimezone(eastern)
+    start_dt = (now_est - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    min_ts, max_ts = start_dt.timestamp(), now_est.timestamp()
+    samples = []
+    for i, convo in enumerate(stream_conversations(min_ts, max_ts)):
+        if i >= 3:
+            break
+        samples.append({
+            "id": convo.get("id"),
+            "tags": convo.get("tags"),
+            "all_tags": convo.get("all_tags"),
+            "tag_keys": [k for k in convo.keys() if "tag" in k.lower()],
+            "all_keys": list(convo.keys()),
+        })
+    return jsonify(samples)
+
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
     threading.Thread(target=compute_stats).start()
