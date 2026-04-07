@@ -149,7 +149,7 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
 
         total, deflected, escalated = 0, 0, 0
         hourly_volume = defaultdict(int)
-        hourly_by_day = defaultdict(lambda: defaultdict(int))
+        hourly_by_day = defaultdict(lambda: defaultdict(lambda: {"total": 0, "deflected": 0, "escalated": 0}))
         daily_deflection = defaultdict(lambda: {"total": 0, "deflected": 0, "escalated": 0})
         daily_csat = defaultdict(list)
         category_counts = defaultdict(int)
@@ -170,7 +170,9 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
                 dt_est = datetime.fromisoformat(c_ts.replace("Z", "+00:00")).astimezone(eastern)
                 day, hour = dt_est.strftime("%Y-%m-%d"), dt_est.strftime("%H:00")
                 hourly_volume[hour] += 1
-                hourly_by_day[day][hour] += 1
+                hourly_by_day[day][hour]["total"] += 1
+                if is_defl: hourly_by_day[day][hour]["deflected"] += 1
+                else: hourly_by_day[day][hour]["escalated"] += 1
                 daily_deflection[day]["total"] += 1
                 if is_defl: daily_deflection[day]["deflected"] += 1
                 else: daily_deflection[day]["escalated"] += 1
@@ -216,12 +218,12 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
                     error_items.append({"id":convo.get("id"), "job_name":r.get("job_name"), "result":r.get("result"), "rationale":r.get("rationale"), "rubric_score":r.get("rubric_score"), "category":parent_cat})
 
         # Calculate final
-        category_pcts = {cat: round((val/total)*100, 1) for cat, val in category_counts.items()} if total > 0 else {}
+        category_pcts = dict(sorted({cat: round((val/total)*100, 1) for cat, val in category_counts.items()}.items())) if total > 0 else {}
         day_labels_db = sorted(hourly_by_day.keys())
         day_labels = [d[5:] for d in day_labels_db]
         
         category_detail = []
-        parents = sorted(list({k[0] for k in cat_detail_map}), key=lambda p: cat_detail_map[(p, None)]["total"], reverse=True)
+        parents = sorted(list({k[0] for k in cat_detail_map}))
         for p in parents:
             p_data = cat_detail_map[(p, None)]
             category_detail.append({
@@ -230,7 +232,7 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
                 "percentage":round((p_data["total"]/total)*100, 1) if total>0 else 0,
                 "day_rates":[round((daily_cat_map[d][(p,None)]["deflected"]/daily_cat_map[d][(p,None)]["total"])*100,1) if daily_cat_map[d][(p,None)]["total"]>0 else None for d in day_labels_db]
             })
-            for s_key in sorted([k for k in cat_detail_map if k[0]==p and k[1]], key=lambda k:cat_detail_map[k]["total"], reverse=True):
+            for s_key in sorted([k for k in cat_detail_map if k[0]==p and k[1]], key=lambda k: k[1]):
                 s_data = cat_detail_map[s_key]
                 category_detail.append({
                     "category":p, "subcategory":s_key[1], "total":s_data["total"], "deflected":s_data["deflected"], "escalated":s_data["escalated"],
@@ -247,7 +249,7 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
             "categories": category_pcts, "day_labels": day_labels, "category_detail": category_detail, "error_analysis": error_items,
             "csat": {"average": round(sum(csat_values)/len(csat_values), 2) if csat_values else 0, "total_ratings": len(csat_values), "distribution": csat_distribution},
             "conversation_totals": {"total": total, "deflected": deflected, "escalated": escalated},
-            "hourly_volume": dict(sorted(hourly_volume.items())), "hourly_by_day": {d: dict(v) for d, v in hourly_by_day.items()}, "error": None
+            "hourly_volume": dict(sorted(hourly_volume.items())), "hourly_by_day": {d: {h: dict(hv) for h, hv in v.items()} for d, v in hourly_by_day.items()}, "error": None
         }
 
         if start_date is None and end_date is None:
