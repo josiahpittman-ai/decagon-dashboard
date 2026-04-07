@@ -150,6 +150,8 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
         total, deflected, escalated = 0, 0, 0
         hourly_volume = defaultdict(int)
         hourly_by_day = defaultdict(lambda: defaultdict(int))
+        daily_deflection = defaultdict(lambda: {"total": 0, "deflected": 0, "escalated": 0})
+        daily_csat = defaultdict(list)
         category_counts = defaultdict(int)
         cat_detail_map = defaultdict(lambda: {"total": 0, "deflected": 0, "escalated": 0})
         daily_cat_map = defaultdict(lambda: defaultdict(lambda: {"total": 0, "deflected": 0}))
@@ -169,11 +171,15 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
                 day, hour = dt_est.strftime("%Y-%m-%d"), dt_est.strftime("%H:00")
                 hourly_volume[hour] += 1
                 hourly_by_day[day][hour] += 1
+                daily_deflection[day]["total"] += 1
+                if is_defl: daily_deflection[day]["deflected"] += 1
+                else: daily_deflection[day]["escalated"] += 1
                 cv = convo.get("csat")
                 if cv and str(cv) in csat_distribution:
                     cv = int(cv)
                     csat_values.append(cv)
                     csat_distribution[str(cv)] += 1
+                    daily_csat[day].append(cv)
 
             # Categories — prefer top-level `tags` array (Insights), fall back to all_tags
             parent_cat, subcats = "Uncategorized", []
@@ -248,8 +254,15 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
             stats_cache = local_results
             with sqlite3.connect(DB_PATH) as conn:
                 for d in day_labels_db:
-                    d_tot = sum(hourly_by_day[d].values())
-                    conn.execute("INSERT OR REPLACE INTO daily_stats (date, total_conversations, deflection_rate, updated_at) VALUES (?,?,?,?)", (d, d_tot, local_results["deflection_rate"], now_est.isoformat()))
+                    dd = daily_deflection[d]
+                    d_tot = dd["total"]
+                    d_defl = dd["deflected"]
+                    d_rate = round((d_defl / d_tot) * 100, 1) if d_tot > 0 else 0
+                    d_csat = round(sum(daily_csat[d]) / len(daily_csat[d]), 2) if daily_csat[d] else None
+                    conn.execute(
+                        "INSERT OR REPLACE INTO daily_stats (date, total_conversations, deflected, escalated, deflection_rate, csat_average, updated_at) VALUES (?,?,?,?,?,?,?)",
+                        (d, d_tot, d_defl, dd["escalated"], d_rate, d_csat, now_est.isoformat())
+                    )
                 conn.commit()
 
         if task_id:
