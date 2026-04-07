@@ -254,8 +254,11 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
 
         if start_date is None and end_date is None:
             stats_cache = local_results
+            today_str = now_est.strftime("%Y-%m-%d")
             with sqlite3.connect(DB_PATH) as conn:
                 for d in day_labels_db:
+                    if d >= today_str:
+                        continue  # skip incomplete days (today or future)
                     dd = daily_deflection[d]
                     d_tot = dd["total"]
                     d_defl = dd["deflected"]
