@@ -349,6 +349,15 @@ def task_status(task_id):
         if not r: return jsonify({"status": "not_found"}), 404
         return jsonify({"status": r[0]})
 
+@app.route("/api/cleanup_today", methods=["POST"])
+def cleanup_today():
+    """Remove today's incomplete stats row from the database."""
+    today_str = datetime.now(eastern).strftime("%Y-%m-%d")
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute("DELETE FROM daily_stats WHERE date >= ?", (today_str,))
+        conn.commit()
+        return jsonify({"deleted": cursor.rowcount, "date_cutoff": today_str})
+
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
     threading.Thread(target=compute_stats).start()
