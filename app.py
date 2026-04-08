@@ -221,7 +221,7 @@ def compute_stats(start_date: str = None, end_date: str = None, task_id: str = N
                     error_items.append({"id":convo.get("id"), "job_name":r.get("job_name"), "result":r.get("result"), "rationale":r.get("rationale"), "rubric_score":r.get("rubric_score"), "category":parent_cat})
 
         # Calculate final
-        category_pcts = dict(sorted({cat: round((val/total)*100, 1) for cat, val in category_counts.items()}.items())) if total > 0 else {}
+        category_pcts = dict(sorted({cat: round((val/total)*100, 1) for cat, val in category_counts.items()}.items(), key=lambda x: x[1], reverse=True)) if total > 0 else {}
         day_labels_db = sorted(hourly_by_day.keys())
         day_labels = [d[5:] for d in day_labels_db]
         

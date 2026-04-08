@@ -32,14 +32,15 @@
       border-bottom: 1px solid var(--border);
       background: var(--card);
     }
-    .topnav .brand { font-weight: 700; font-size: 1rem; color: var(--accent); }
+    .topnav .brand { font-weight: 700; font-size: 1rem; color: var(--accent); letter-spacing: .03em; }
     .topnav .nav-links { display: flex; gap: 1.5rem; }
     .topnav .nav-links a {
-      text-decoration: none; color: var(--muted); font-size: 0.85rem; padding-bottom: 2px;
+      text-decoration: none; color: var(--muted); font-size: 0.875rem; padding-bottom: 2px; transition: color .15s;
     }
     .topnav .nav-links a:hover, .topnav .nav-links a.active {
       color: var(--text); border-bottom: 2px solid var(--accent);
     }
+    .topnav .right { display: flex; align-items: center; gap: 1rem; }
 
     /* CONTAINER */
     .container { padding: 1.2rem 1.5rem 3rem; max-width: 1600px; margin: 0 auto; }
@@ -112,12 +113,19 @@
 <nav class="topnav">
   <span class="brand">Decagon Stats</span>
   <div class="nav-links">
-    {% set query = '?start_date=' + stats.start_date + '&end_date=' + stats.end_date if stats.start_date and stats.end_date else '' %}
+    {% set tid = request.args.get('task_id', '') %}
+    {% if tid %}
+      {% set query = '?task_id=' + tid %}
+    {% elif stats.start_date and stats.end_date %}
+      {% set query = '?start_date=' + stats.start_date + '&end_date=' + stats.end_date %}
+    {% else %}
+      {% set query = '' %}
+    {% endif %}
     <a href="/{{ query }}">Overview</a>
     <a href="/categories{{ query }}">Categories</a>
     <a href="/history" class="active">Daily History</a>
   </div>
-  <div class="right" style="margin-left: auto;">
+  <div class="right">
     <span style="font-size:.8rem;color:var(--muted);" id="lastUpdated">
       {% if stats.last_updated %}Updated {{ stats.last_updated[:19].replace('T',' ') }} EST{% endif %}
     </span>
