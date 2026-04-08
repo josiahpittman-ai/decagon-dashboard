@@ -364,12 +364,23 @@ def refresh():
 # ---------------------------------------------------------------------------
 # Scheduler & Startup
 # ---------------------------------------------------------------------------
-scheduler = BackgroundScheduler(timezone=eastern)
-scheduler.add_job(compute_stats, "cron", hour=0, minute=0)
-scheduler.start()
+_startup_done = False
 
-logger.info("Service starting, launching background initial fetch...")
-threading.Thread(target=compute_stats).start()
+@app.before_request
+def _lazy_startup():
+    global _startup_done
+    if not _startup_done:
+        _startup_done = True
+        logger.info("First request received — launching background data fetch...")
+        threading.Thread(target=compute_stats, daemon=True).start()
+
+try:
+    scheduler = BackgroundScheduler(timezone=eastern)
+    scheduler.add_job(compute_stats, "cron", hour=0, minute=0)
+    scheduler.start()
+    logger.info("Scheduler started (midnight EST refresh).")
+except Exception as e:
+    logger.error(f"Scheduler failed to start: {e}", exc_info=True)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
