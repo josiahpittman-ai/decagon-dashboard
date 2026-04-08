@@ -60,7 +60,10 @@ def init_db():
         ''')
         conn.commit()
 
-init_db()
+try:
+    init_db()
+except Exception as e:
+    logger.error(f"init_db failed: {e}", exc_info=True)
 
 # ---------------------------------------------------------------------------
 # Cache
@@ -348,6 +351,10 @@ def task_status(task_id):
         r = conn.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
         if not r: return jsonify({"status": "not_found"}), 404
         return jsonify({"status": r[0]})
+
+@app.route("/healthz")
+def healthz():
+    return "ok", 200
 
 @app.route("/api/refresh", methods=["POST"])
 def refresh():
