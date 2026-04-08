@@ -382,5 +382,7 @@ try:
 except Exception as e:
     logger.error(f"Scheduler failed to start: {e}", exc_info=True)
 
+logger.info(f"App module loaded. PORT={PORT}, DB_PATH={DB_PATH}, API_KEY={'set' if DECAGON_API_KEY else 'NOT SET'}")
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
